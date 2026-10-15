@@ -97,14 +97,24 @@ class FlowCanvasController extends TransformationController {
   void panTo(Offset scenePoint, Size viewportSize, {double? zoom}) =>
       centerAt(scenePoint, viewportSize, zoom: zoom);
 
-  void fitView<T>(
-    Iterable<FlowNode<T>> nodes,
+  /// Center graph coordinate ([x], [y]) in the attached canvas.
+  ///
+  /// The canvas supplies its viewport size during layout. This is a no-op
+  /// until the controller is attached to a laid-out canvas.
+  void setCenter(double x, double y, {double? zoom}) {
+    final size = _viewportSize;
+    if (size == null || size.isEmpty) return;
+    centerAt(Offset(x, y), size, zoom: zoom);
+  }
+
+  /// Fit [bounds] inside [viewportSize] while preserving the requested padding.
+  void fitBounds(
+    Rect bounds,
     Size viewportSize, {
     double padding = 80,
     double minZoom = 0.25,
     double maxZoom = 2,
   }) {
-    final bounds = FlowGeometry.nodesBounds(nodes);
     if (bounds.isEmpty || viewportSize.isEmpty) return;
     setViewport(FlowGraphUtils.getViewportForBounds(
       bounds,
@@ -113,5 +123,22 @@ class FlowCanvasController extends TransformationController {
       minZoom: minZoom,
       maxZoom: maxZoom,
     ));
+  }
+
+  void fitView<T>(
+    Iterable<FlowNode<T>> nodes,
+    Size viewportSize, {
+    double padding = 80,
+    double minZoom = 0.25,
+    double maxZoom = 2,
+  }) {
+    final bounds = FlowGeometry.nodesBounds(nodes);
+    fitBounds(
+      bounds,
+      viewportSize,
+      padding: padding,
+      minZoom: minZoom,
+      maxZoom: maxZoom,
+    );
   }
 }

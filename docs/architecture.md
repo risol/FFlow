@@ -8,8 +8,9 @@ FFlow is a Flutter SDK package. The repository root contains reusable graph mode
 lib/
   fflow.dart
   src/
-    canvas/flow_canvas.dart             Controlled canvas and gesture lifecycle
-    controllers/flow_canvas_controller.dart  Pan, zoom, fit, and coordinate conversion
+    canvas/flow_canvas.dart             Graph canvas and gesture lifecycle
+    controllers/flow_canvas_controller.dart  Pan, zoom, fit, centering, and coordinate conversion
+    controllers/flow_graph_controller.dart   Observable graph state and query/update API
     geometry/flow_geometry.dart         Handle anchors, edge paths, and hit testing
     interactions/flow_graph_interaction.dart  Connection validation and edge edits
     models/                              Nodes, edges, handles, selection, snapshots
@@ -26,15 +27,15 @@ The example imports only `package:fflow/fflow.dart`; it should not import `lib/s
 
 ## Ownership and event flow
 
-The host app owns node and edge lists. `FFlowCanvas` renders those lists and emits immutable replacements through `onNodesChanged` and `onEdgesChanged`. It reports a validated connection through `onConnect`; the host creates an edge and adds it to its state. Selection state is also reflected in the `selected` model fields and reported as a `FlowSelection`.
+The host app can own controlled node and edge lists, or use `FlowGraphController` as its observable graph store. `FFlowCanvas` reports controlled-list changes through `onNodesChanged` and `onEdgesChanged`; with a graph controller, it reads and writes the controller state directly. It reports a validated connection through `onConnect`; the host creates an edge and adds it to the selected state source. Selection state is reflected in the `selected` model fields and reported as a `FlowSelection`.
 
 ```text
-host app state
+host lists or FlowGraphController
     │ nodes / edges
     ▼
-FFlowCanvas ── gestures ──> callbacks ──> host app state
+FFlowCanvas ── gestures ──> callbacks/controller updates
     │
-    ├── controller: viewport transforms
+    ├── controllers: graph state and viewport transforms
     ├── geometry: handles, paths, hit tests
     ├── interactions: validation, reconnect, move
     └── rendering: edges, handles, background
@@ -45,15 +46,16 @@ The SDK has no third-party package dependencies. Application-specific node data 
 ## Current interaction coverage
 
 - Pan and pinch zoom, `FlowCanvasController`, fit-to-view, and coordinate conversion.
-- Node drag, group drag, parent-relative subflows, optional node resize, single/multi-select, shift-drag box selection, and keyboard delete/select-all/escape.
-- Named source/target handles, connection previews, maximum-connection checks, duplicate prevention, and application validation.
+- Node drag, group drag, parent-relative subflows, eight-direction resize, optional content measurement, single/multi-select, shift-drag box selection, and keyboard delete/select-all/escape.
+- Named source/target handles, strict and loose source-to-source connections, connection previews, maximum-connection checks, duplicate prevention, and application validation.
+- Click-to-connect, floating edge endpoints, z-order control, and node/edge/pane pointer lifecycle callbacks.
 - Bezier, straight, step, and smooth-step paths; labels, markers, hit testing, selection, animated edges, and reconnectable endpoints.
 - Hidden/selectable/deletable node and edge options, custom node/edge renderers, controls, dotted/line/cross backgrounds, and interactive minimap.
-- Immutable graph helpers, change application, neighborhood queries, deletion, and typed graph snapshots with caller-provided node-data codecs.
+- Observable graph controller, immutable graph helpers, change application, filtered node/handle and neighborhood queries, rectangle intersection checks, deletion, and typed graph snapshots with caller-provided node-data codecs.
 
 The SDK models React Flow's graph concepts and common editor interactions. React hooks, DOM/CSS node behavior, React-specific plugins, and the broader extension ecosystem are not Flutter APIs and are not emulated one-for-one.
 
-Parent nodes position children relative to themselves and render beneath descendants. Extent constraints, automatic parent resizing, built-in layout algorithms, and React Flow's hook/store APIs remain application-level or future work.
+Parent nodes position children relative to themselves and render beneath descendants. Extent constraints and automatic parent resizing are supported. Built-in layout algorithms, undo/redo history, clipboard operations, collaboration, and React Flow's hook/store APIs remain application-level or framework-specific.
 
 ## Dependency direction
 

@@ -5,16 +5,20 @@ class FlowPort extends StatelessWidget {
     super.key,
     required this.isOutput,
     this.enabled = false,
+    this.onTap,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
+    this.onPanCancel,
   });
 
   final bool isOutput;
   final bool enabled;
+  final VoidCallback? onTap;
   final GestureDragStartCallback? onPanStart;
   final GestureDragUpdateCallback? onPanUpdate;
   final GestureDragEndCallback? onPanEnd;
+  final GestureDragCancelCallback? onPanCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -40,9 +44,11 @@ class FlowPort extends StatelessWidget {
     if (!enabled) return IgnorePointer(child: port);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onTap: onTap,
       onPanStart: onPanStart,
       onPanUpdate: onPanUpdate,
       onPanEnd: onPanEnd,
+      onPanCancel: onPanCancel,
       child: SizedBox(width: 22, height: 22, child: Center(child: port)),
     );
   }

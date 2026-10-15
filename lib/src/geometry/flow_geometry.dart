@@ -31,16 +31,62 @@ abstract final class FlowGeometry {
     FlowNode<T> node,
     Map<String, FlowNode<T>> nodes,
   ) {
-    var position = node.position;
+    var position = _topLeft(node.position, node);
     var parentId = node.parentId;
     final visited = <String>{node.id};
     while (parentId != null && visited.add(parentId)) {
       final parent = nodes[parentId];
       if (parent == null) break;
-      position += parent.position;
+      position += _topLeft(parent.position, parent);
       parentId = parent.parentId;
     }
     return position;
+  }
+
+  static Offset _topLeft<T>(Offset anchor, FlowNode<T> node) => Offset(
+        anchor.dx - node.width * node.origin.dx,
+        anchor.dy - node.height * node.origin.dy,
+      );
+
+  /// Clamp [position] so the complete node remains inside its explicit extent
+  /// and/or parent bounds. Position and extent use parent-local coordinates.
+  static Offset constrainNodePosition<T>(
+      FlowNode<T> node, Offset position, Map<String, FlowNode<T>> nodes,
+      {Rect? globalExtent}) {
+    final parent = node.parentId == null ? null : nodes[node.parentId];
+    final useParent = node.extentToParent && parent != null;
+    final extent = node.parentId == null && globalExtent != null
+        ? _intersectExtents(node.extent, globalExtent)
+        : node.extent;
+    if (!useParent && extent == null) return position;
+
+    final left = math.max(extent?.left ?? double.negativeInfinity,
+        useParent ? 0 : double.negativeInfinity);
+    final top = math.max(extent?.top ?? double.negativeInfinity,
+        useParent ? 0 : double.negativeInfinity);
+    final right = math.min(extent?.right ?? double.infinity,
+        useParent ? parent.width : double.infinity);
+    final bottom = math.min(extent?.bottom ?? double.infinity,
+        useParent ? parent.height : double.infinity);
+    final minX = left;
+    final minY = top;
+    final maxX = math.max(minX, right - node.width);
+    final maxY = math.max(minY, bottom - node.height);
+    final topLeft = _topLeft(position, node);
+    return Offset(
+      topLeft.dx.clamp(minX, maxX).toDouble() + node.width * node.origin.dx,
+      topLeft.dy.clamp(minY, maxY).toDouble() + node.height * node.origin.dy,
+    );
+  }
+
+  static Rect? _intersectExtents(Rect? first, Rect? second) {
+    if (first == null) return second;
+    if (second == null) return first;
+    final left = math.max(first.left, second.left);
+    final top = math.max(first.top, second.top);
+    final right = math.max(left, math.min(first.right, second.right));
+    final bottom = math.max(top, math.min(first.bottom, second.bottom));
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   static Rect nodeRect<T>(
@@ -115,17 +161,41 @@ abstract final class FlowGeometry {
         : handleFor(node, edge.sourceHandleId, FlowHandleType.source);
     return node == null || !isVisible(node, nodes) || handle == null
         ? null
-        : handleAnchor(node, handle, nodes: nodes);
+        : edge.floating && nodes[edge.targetId] != null
+            ? floatingAnchor(node, nodes[edge.targetId]!, nodes: nodes)
+            : handleAnchor(node, handle, nodes: nodes);
   }
 
   static Offset? edgeTarget<T>(FlowEdge edge, Map<String, FlowNode<T>> nodes) {
     final node = nodes[edge.targetId];
     final handle = node == null
         ? null
-        : handleFor(node, edge.targetHandleId, FlowHandleType.target);
+        : handleFor(node, edge.targetHandleId, edge.targetHandleType);
     return node == null || !isVisible(node, nodes) || handle == null
         ? null
-        : handleAnchor(node, handle, nodes: nodes);
+        : edge.floating && nodes[edge.sourceId] != null
+            ? floatingAnchor(node, nodes[edge.sourceId]!, nodes: nodes)
+            : handleAnchor(node, handle, nodes: nodes);
+  }
+
+  /// Returns the point where the ray from a node's center toward [other]
+  /// intersects its rectangular boundary.
+  static Offset floatingAnchor<T>(
+    FlowNode<T> node,
+    FlowNode<T> other, {
+    required Map<String, FlowNode<T>> nodes,
+  }) {
+    final rect = nodeRect(node, nodes);
+    final delta = nodeRect(other, nodes).center - rect.center;
+    if (delta == Offset.zero) return rect.centerRight;
+    final halfWidth = math.max(rect.width / 2, 1e-9);
+    final halfHeight = math.max(rect.height / 2, 1e-9);
+    final scale = 1 /
+        math.max(
+          delta.dx.abs() / halfWidth,
+          delta.dy.abs() / halfHeight,
+        );
+    return rect.center + delta * scale;
   }
 
   static Path edgePath(
@@ -136,6 +206,7 @@ abstract final class FlowGeometry {
     FlowHandlePosition targetPosition = FlowHandlePosition.left,
   }) {
     final path = Path()..moveTo(start.dx, start.dy);
+    final stepPosition = edge.stepPosition.clamp(0.05, 0.95).toDouble();
     switch (edge.type) {
       case FlowEdgeType.straight:
         path.lineTo(end.dx, end.dy);
@@ -151,12 +222,14 @@ abstract final class FlowGeometry {
         final targetIsHorizontal = targetDirection.dx != 0;
         final points = <Offset>[start, sourceLead];
         if (sourceIsHorizontal && targetIsHorizontal) {
-          final middleX = (sourceLead.dx + targetLead.dx) / 2;
+          final middleX =
+              sourceLead.dx + (targetLead.dx - sourceLead.dx) * stepPosition;
           points
             ..add(Offset(middleX, sourceLead.dy))
             ..add(Offset(middleX, targetLead.dy));
         } else if (!sourceIsHorizontal && !targetIsHorizontal) {
-          final middleY = (sourceLead.dy + targetLead.dy) / 2;
+          final middleY =
+              sourceLead.dy + (targetLead.dy - sourceLead.dy) * stepPosition;
           points
             ..add(Offset(sourceLead.dx, middleY))
             ..add(Offset(targetLead.dx, middleY));
@@ -173,12 +246,13 @@ abstract final class FlowGeometry {
             path.lineTo(point.dx, point.dy);
           }
         } else {
-          _appendRoundedPolyline(path, points);
+          _appendRoundedPolyline(path, points, edge.cornerRadius);
         }
       case FlowEdgeType.bezier:
       case FlowEdgeType.simpleBezier:
-        final distance =
-            ((end - start).distance * 0.5).clamp(36.0, 190.0).toDouble();
+        final distance = ((end - start).distance * edge.curvature)
+            .clamp(36.0, 190.0)
+            .toDouble();
         final sourceControl = start + _direction(sourcePosition) * distance;
         final targetControl = end + _direction(targetPosition) * distance;
         path.cubicTo(
@@ -200,15 +274,34 @@ abstract final class FlowGeometry {
     final sourceHandle =
         handleFor(source, edge.sourceHandleId, FlowHandleType.source);
     final targetHandle =
-        handleFor(target, edge.targetHandleId, FlowHandleType.target);
+        handleFor(target, edge.targetHandleId, edge.targetHandleType);
     if (sourceHandle == null || targetHandle == null) return Path();
+    final start = edgeSource(edge, nodes);
+    final end = edgeTarget(edge, nodes);
+    if (start == null || end == null) return Path();
+    final sourcePosition = edge.floating
+        ? _boundarySide(nodeRect(source, nodes), start)
+        : sourceHandle.position;
+    final targetPosition = edge.floating
+        ? _boundarySide(nodeRect(target, nodes), end)
+        : targetHandle.position;
     return edgePath(
       edge,
-      handleAnchor(source, sourceHandle, nodes: nodes),
-      handleAnchor(target, targetHandle, nodes: nodes),
-      sourcePosition: sourceHandle.position,
-      targetPosition: targetHandle.position,
+      start,
+      end,
+      sourcePosition: sourcePosition,
+      targetPosition: targetPosition,
     );
+  }
+
+  static FlowHandlePosition _boundarySide(Rect rect, Offset point) {
+    final delta = point - rect.center;
+    final horizontalDistance = delta.dx.abs() / math.max(rect.width, 1);
+    final verticalDistance = delta.dy.abs() / math.max(rect.height, 1);
+    if (horizontalDistance >= verticalDistance) {
+      return delta.dx < 0 ? FlowHandlePosition.left : FlowHandlePosition.right;
+    }
+    return delta.dy < 0 ? FlowHandlePosition.top : FlowHandlePosition.bottom;
   }
 
   static Offset _direction(FlowHandlePosition position) => switch (position) {
@@ -218,7 +311,8 @@ abstract final class FlowGeometry {
         FlowHandlePosition.bottom => const Offset(0, 1),
       };
 
-  static void _appendRoundedPolyline(Path path, List<Offset> points) {
+  static void _appendRoundedPolyline(
+      Path path, List<Offset> points, double cornerRadius) {
     if (points.length < 2) return;
     for (var index = 1; index < points.length - 1; index++) {
       final previous = points[index - 1];
@@ -227,7 +321,7 @@ abstract final class FlowGeometry {
       final incomingLength = (corner - previous).distance;
       final outgoingLength = (next - corner).distance;
       final radius =
-          math.min(8.0, math.min(incomingLength, outgoingLength) / 2);
+          math.min(cornerRadius, math.min(incomingLength, outgoingLength) / 2);
       if (radius <= 0.01) {
         path.lineTo(corner.dx, corner.dy);
         continue;

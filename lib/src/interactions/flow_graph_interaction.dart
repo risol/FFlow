@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../geometry/flow_geometry.dart';
 import '../models/flow_connection.dart';
 import '../models/flow_edge.dart';
+import '../models/flow_events.dart';
 import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
 
@@ -30,6 +31,7 @@ abstract final class FlowGraphInteraction {
     bool Function(FlowConnection connection)? isValidConnection,
     double snapRadius = 38,
     String? excludedEdgeId,
+    FlowConnectionMode connectionMode = FlowConnectionMode.strict,
   }) {
     final nodesById = {for (final node in nodes) node.id: node};
     FlowNode<T>? source;
@@ -66,13 +68,19 @@ abstract final class FlowGraphInteraction {
         continue;
       }
       for (final handle in node.resolvedHandles) {
-        if (handle.type != FlowHandleType.target ||
+        if ((handle.type != FlowHandleType.target &&
+                !(connectionMode == FlowConnectionMode.loose &&
+                    handle.type == FlowHandleType.source)) ||
             !handle.connectable ||
             !handle.connectableEnd ||
-            _connectionCount(
-                    nodes, edges, node.id, handle.id, FlowHandleType.target,
+            _connectionCount(nodes, edges, node.id, handle.id, handle.type,
                     excludedEdgeId: excludedEdgeId) >=
                 (handle.maxConnections ?? 1 << 30)) {
+          continue;
+        }
+        if (node.id == sourceId &&
+            handle.id == sourceHandleId &&
+            handle.type == FlowHandleType.source) {
           continue;
         }
         final candidateDistance =
@@ -84,6 +92,7 @@ abstract final class FlowGraphInteraction {
           sourceHandleId: sourceHandleId,
           targetId: node.id,
           targetHandleId: handle.id,
+          targetHandleType: handle.type,
         );
         if (isValidConnection != null && !isValidConnection(candidate)) {
           continue;
@@ -101,7 +110,8 @@ abstract final class FlowGraphInteraction {
   }
 
   /// Finds a compatible source handle near [point] for reconnecting an edge's
-  /// source endpoint while keeping its target endpoint fixed.
+  /// source endpoint while keeping its target endpoint fixed. The fixed target
+  /// may itself be a source handle when [connectionMode] is loose.
   static FlowConnection? sourceConnectionAt<T>({
     required List<FlowNode<T>> nodes,
     required List<FlowEdge> edges,
@@ -111,19 +121,26 @@ abstract final class FlowGraphInteraction {
     bool Function(FlowConnection connection)? isValidConnection,
     double snapRadius = 38,
     String? excludedEdgeId,
+    FlowHandleType targetHandleType = FlowHandleType.target,
+    FlowConnectionMode connectionMode = FlowConnectionMode.strict,
   }) {
     final nodesById = {for (final node in nodes) node.id: node};
     final targetNode = nodes.where((node) => node.id == targetId).firstOrNull;
     final targetHandle = targetNode == null
         ? null
-        : FlowGeometry.handleFor(
-            targetNode, targetHandleId, FlowHandleType.target);
+        : FlowGeometry.handleFor(targetNode, targetHandleId, targetHandleType);
     if (targetNode == null ||
         !FlowGeometry.isVisible(targetNode, nodesById) ||
         !targetNode.connectable ||
+        (targetHandleType == FlowHandleType.source &&
+            connectionMode != FlowConnectionMode.loose) ||
         targetHandle == null ||
         !targetHandle.connectable ||
-        !targetHandle.connectableEnd) {
+        !targetHandle.connectableEnd ||
+        _connectionCount(
+                nodes, edges, targetId, targetHandleId, targetHandleType,
+                excludedEdgeId: excludedEdgeId) >=
+            (targetHandle.maxConnections ?? 1 << 30)) {
       return null;
     }
     FlowConnection? closest;
@@ -142,6 +159,11 @@ abstract final class FlowGraphInteraction {
                 (handle.maxConnections ?? 1 << 30)) {
           continue;
         }
+        if (node.id == targetId &&
+            handle.id == targetHandleId &&
+            targetHandleType == FlowHandleType.source) {
+          continue;
+        }
         final distance =
             (FlowGeometry.handleAnchor(node, handle, nodes: nodesById) - point)
                 .distance;
@@ -151,6 +173,7 @@ abstract final class FlowGraphInteraction {
           sourceHandleId: handle.id,
           targetId: targetId,
           targetHandleId: targetHandleId,
+          targetHandleType: targetHandleType,
         );
         if (isValidConnection != null && !isValidConnection(candidate)) {
           continue;
@@ -174,6 +197,7 @@ abstract final class FlowGraphInteraction {
         sourceHandleId: connection.sourceHandleId,
         targetId: connection.targetId,
         targetHandleId: connection.targetHandleId,
+        targetHandleType: connection.targetHandleType,
       );
 
   static List<FlowEdge> reconnectEdge({
@@ -197,11 +221,29 @@ abstract final class FlowGraphInteraction {
             sourceHandleId: connection.sourceHandleId,
             targetId: connection.targetId,
             targetHandleId: connection.targetHandleId,
+            targetHandleType: connection.targetHandleType,
           )
         else
           edge,
     ]);
   }
+
+  static int getHandleConnectionCount<T>({
+    required List<FlowNode<T>> nodes,
+    required List<FlowEdge> edges,
+    required String nodeId,
+    required String handleId,
+    required FlowHandleType type,
+    String? excludedEdgeId,
+  }) =>
+      _connectionCount(
+        nodes,
+        edges,
+        nodeId,
+        handleId,
+        type,
+        excludedEdgeId: excludedEdgeId,
+      );
 
   static int _connectionCount<T>(
     List<FlowNode<T>> nodes,
@@ -213,17 +255,27 @@ abstract final class FlowGraphInteraction {
   }) {
     final node = nodes.where((item) => item.id == nodeId).firstOrNull;
     if (node == null) return 0;
-    return edges.where((edge) {
-      if (edge.id == excludedEdgeId) return false;
-      final endpointNodeId =
-          type == FlowHandleType.source ? edge.sourceId : edge.targetId;
-      if (endpointNodeId != nodeId) return false;
-      final endpointHandleId = type == FlowHandleType.source
-          ? edge.sourceHandleId
-          : edge.targetHandleId;
-      final endpoint = FlowGeometry.handleFor(node, endpointHandleId, type);
-      return endpoint?.id == handleId;
-    }).length;
+    var count = 0;
+    for (final edge in edges) {
+      if (edge.id == excludedEdgeId) continue;
+      if (type == FlowHandleType.source && edge.sourceId == nodeId) {
+        final endpoint = FlowGeometry.handleFor(
+          node,
+          edge.sourceHandleId,
+          FlowHandleType.source,
+        );
+        if (endpoint?.id == handleId) count++;
+      }
+      if (edge.targetId == nodeId && edge.targetHandleType == type) {
+        final endpoint = FlowGeometry.handleFor(
+          node,
+          edge.targetHandleId,
+          edge.targetHandleType,
+        );
+        if (endpoint?.id == handleId) count++;
+      }
+    }
+    return count;
   }
 
   static bool _containsConnection<T>(
@@ -242,7 +294,7 @@ abstract final class FlowGraphInteraction {
     final expectedTargetHandle = target == null
         ? null
         : FlowGeometry.handleFor(
-            target, connection.targetHandleId, FlowHandleType.target);
+            target, connection.targetHandleId, connection.targetHandleType);
     return edges.any((edge) {
       if (edge.id == excludedEdgeId ||
           edge.sourceId != connection.sourceId ||
@@ -258,9 +310,10 @@ abstract final class FlowGraphInteraction {
       final edgeTargetHandle = target == null
           ? null
           : FlowGeometry.handleFor(
-              target, edge.targetHandleId, FlowHandleType.target);
+              target, edge.targetHandleId, edge.targetHandleType);
       return edgeSourceHandle?.id == expectedSourceHandle.id &&
-          edgeTargetHandle?.id == expectedTargetHandle.id;
+          edgeTargetHandle?.id == expectedTargetHandle.id &&
+          edge.targetHandleType == connection.targetHandleType;
     });
   }
 }

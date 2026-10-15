@@ -6,6 +6,7 @@ import '../geometry/flow_geometry.dart';
 import '../interactions/flow_graph_interaction.dart';
 import '../models/flow_connection.dart';
 import '../models/flow_edge.dart';
+import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
 import '../models/flow_viewport.dart';
 
@@ -71,7 +72,8 @@ abstract final class FlowGraphUtils {
             (edge.sourceHandleId ?? 'source') &&
         existing.targetId == edge.targetId &&
         (existing.targetHandleId ?? 'target') ==
-            (edge.targetHandleId ?? 'target'));
+            (edge.targetHandleId ?? 'target') &&
+        existing.targetHandleType == edge.targetHandleType);
     if (duplicate || edges.any((existing) => existing.id == edge.id)) {
       return edges;
     }
@@ -182,7 +184,9 @@ abstract final class FlowGraphUtils {
             if (node.parentId != null &&
                 deletableNodeIds.contains(node.parentId))
               node.copyWith(
-                position: FlowGeometry.absolutePosition(node, nodesById),
+                position: FlowGeometry.absolutePosition(node, nodesById) +
+                    Offset(node.width * node.origin.dx,
+                        node.height * node.origin.dy),
                 clearParentId: true,
               )
             else
@@ -204,6 +208,100 @@ abstract final class FlowGraphUtils {
       (edge) => ids.contains(edge.sourceId) || ids.contains(edge.targetId),
     ));
   }
+
+  static FlowNode<T>? getNode<T>(String id, Iterable<FlowNode<T>> nodes) =>
+      nodes.where((node) => node.id == id).firstOrNull;
+
+  /// Returns the nodes fully contained by, or overlapping, [bounds].
+  static List<FlowNode<T>> getNodesInside<T>(
+    Rect bounds,
+    Iterable<FlowNode<T>> nodes, {
+    bool partial = true,
+    bool includeHidden = false,
+  }) {
+    final nodeList = nodes.toList(growable: false);
+    final nodesById = {for (final node in nodeList) node.id: node};
+    return List.unmodifiable(nodeList.where((node) {
+      if (!includeHidden && !FlowGeometry.isVisible(node, nodesById)) {
+        return false;
+      }
+      final rect = FlowGeometry.nodeRect(node, nodesById);
+      if (partial) return rect.overlaps(bounds);
+      return bounds.left <= rect.left &&
+          bounds.top <= rect.top &&
+          bounds.right >= rect.right &&
+          bounds.bottom >= rect.bottom;
+    }));
+  }
+
+  /// Finds visible nodes that overlap the node identified by [nodeId].
+  static List<FlowNode<T>> getIntersectingNodes<T>(
+    String nodeId,
+    Iterable<FlowNode<T>> nodes, {
+    bool partial = true,
+    bool includeHidden = false,
+  }) {
+    final nodeList = nodes.toList(growable: false);
+    final nodesById = {for (final node in nodeList) node.id: node};
+    final source = nodesById[nodeId];
+    if (source == null ||
+        (!includeHidden && !FlowGeometry.isVisible(source, nodesById))) {
+      return const [];
+    }
+    final sourceRect = FlowGeometry.nodeRect(source, nodesById);
+    return List.unmodifiable(nodeList.where((node) {
+      if (node.id == nodeId ||
+          (!includeHidden && !FlowGeometry.isVisible(node, nodesById))) {
+        return false;
+      }
+      final rect = FlowGeometry.nodeRect(node, nodesById);
+      return partial
+          ? sourceRect.overlaps(rect)
+          : sourceRect.left <= rect.left &&
+              sourceRect.top <= rect.top &&
+              sourceRect.right >= rect.right &&
+              sourceRect.bottom >= rect.bottom;
+    }));
+  }
+
+  /// Returns whether a node overlaps or is fully contained by [area].
+  static bool isNodeIntersecting<T>(
+    String nodeId,
+    Rect area,
+    Iterable<FlowNode<T>> nodes, {
+    bool partial = true,
+    bool includeHidden = false,
+  }) {
+    final nodeList = nodes.toList(growable: false);
+    final nodesById = {for (final node in nodeList) node.id: node};
+    final node = nodesById[nodeId];
+    if (node == null ||
+        (!includeHidden && !FlowGeometry.isVisible(node, nodesById))) {
+      return false;
+    }
+    final rect = FlowGeometry.nodeRect(node, nodesById);
+    if (partial) return rect.overlaps(area);
+    return area.left <= rect.left &&
+        area.top <= rect.top &&
+        area.right >= rect.right &&
+        area.bottom >= rect.bottom;
+  }
+
+  static List<FlowEdge> getHandleConnections(
+    String nodeId,
+    List<FlowEdge> edges, {
+    String? handleId,
+    FlowHandleType? type,
+  }) =>
+      List.unmodifiable(edges.where((edge) {
+        final isSource = edge.sourceId == nodeId &&
+            (type == null || type == FlowHandleType.source) &&
+            (handleId == null || edge.sourceHandleId == handleId);
+        final isTarget = edge.targetId == nodeId &&
+            (type == null || type == edge.targetHandleType) &&
+            (handleId == null || edge.targetHandleId == handleId);
+        return isSource || isTarget;
+      }));
 
   static List<FlowNode<T>> getIncomers<T>(
     FlowNode<T> node,

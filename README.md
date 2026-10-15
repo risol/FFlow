@@ -35,15 +35,34 @@ FFlowCanvas<MyNodeData>(
 );
 ```
 
-Node and edge lists are controlled by the host app. FFlow reports changes through callbacks; the host app stores the updated lists and rebuilds the canvas. The canvas provides panning, zooming, node dragging, connection handles, connection previews, and customizable node widgets.
+By default, node and edge lists are controlled by the host app. FFlow reports changes through callbacks; the host stores the updated lists and rebuilds the canvas. Apps can instead pass a `FlowGraphController` to own observable graph state and query it without wiring list callbacks themselves.
+
+```dart
+final graph = FlowGraphController<MyNodeData>(nodes: nodes, edges: edges);
+
+FFlowCanvas<MyNodeData>(
+  graphController: graph,
+  nodeBuilder: (context, node, selected) => MyNodeCard(
+    data: node.data,
+    selected: selected,
+  ),
+);
+
+final incoming = graph.getIncomers('review');
+final bounds = graph.nodesBounds;
+```
 
 ## Included editor features
 
-- Drag and resize nodes, snap to an optional grid, select multiple nodes and edges, shift-drag a selection box, and use Delete/Backspace, Ctrl/Cmd+A, or Escape.
-- Connect named handles with max-connection and custom validation; select and reconnect edges.
-- Choose bezier, straight, step, and smooth-step edges; add labels, markers, animation, or custom edge renderers.
-- Control pan/zoom, scroll zoom, double-click zoom, and fit-to-view with `FlowCanvasController`; compose `FFlowControls` and `FFlowMiniMap`.
-- Use `FlowGraphUtils` for graph edits and `FlowGraphSnapshot` to save/restore typed graph data.
+- Drag and resize nodes from eight directions with min/max size, anchor origins, optional content measurement, drag-handle regions, snap-to-grid, global/parent bounds, z-order, and automatic parent expansion.
+- Select nodes and edges by clicking or dragging a full/partial selection box; receive click, double-click, hover, context-menu, selection, drag, resize, delete, connect, and reconnect lifecycle callbacks.
+- Navigate focusable nodes and edges with Tab, select with Enter/Space, and move focused nodes with arrow keys (Shift for the larger step). Nodes and edges accept accessible labels, and selection changes are announced.
+- Connect named handles by dragging or clicking; strict mode connects source-to-target, while loose mode also supports source-to-source connections. Validate connections, enforce per-handle capacity, and independently allow reconnecting an edge's source, target, or both.
+- Choose bezier, straight, step, smooth-step, or simple-bezier edges; configure curve, bend, corner radius, floating endpoints, marker color, labels, animation, z-order, and custom edge or connection-line renderers.
+- Constrain viewport panning with `translateExtent`; enable opt-in off-screen node/edge culling for larger graphs.
+- Control pan/zoom, scroll speed, double-click zoom, fit-to-view, fit-bounds, and centering with `FlowCanvasController`; compose `FFlowControls` and the customizable `FFlowMiniMap`.
+- Add selected-node and selected-edge toolbars through canvas builders, and extend viewport controls with a lock toggle or custom buttons.
+- Use `FlowGraphController` for observable graph state and node/edge queries, `FlowGraphUtils` for immutable graph edits, and `FlowGraphSnapshot` to save/restore typed graph data.
 
 The package has no third-party dependencies. React Flow's React hooks, DOM/CSS behavior, and React-specific integrations do not map directly to Flutter; FFlow exposes equivalent graph concepts through Flutter widgets and Dart APIs.
 
@@ -67,15 +86,51 @@ This compares FFlow's implemented SDK APIs with React Flow's documented core fea
 
 | Area | FFlow | Compared with React Flow |
 | --- | --- | --- |
-| Graph state | Controlled `nodes` and `edges`, change callbacks, immutable list helpers, and typed graph snapshots. | Same controlled-graph model; React Flow additionally exposes React hooks and a flow instance/store API. |
-| Nodes and selection | Custom Flutter node widgets, dragging, optional resizing, single/multi-select, Shift box selection, group dragging, and Delete/Backspace, Ctrl/Cmd+A, and Escape shortcuts. | Covers the common editing loop. React Flow has more interaction options and richer keyboard accessibility, including focus navigation and arrow-key node movement. |
-| Connections | Named source/target handles, connection preview, capacity and duplicate checks, custom validation, and edge reconnection. | Core connection concepts are covered; React Flow offers additional connection and handle configuration. |
-| Edges | Bezier, straight, step, smooth-step, and simple-bezier paths; labels, arrow markers, animation, selection, hit testing, reconnection, and custom edge builders. | Core edge types are covered. React Flow also has dedicated edge labels/toolbars and a larger SVG customization surface; FFlow renders through Flutter painters/widgets. |
-| Viewport and canvas chrome | Pan/zoom controller, scroll and double-click zoom, fit-to-view, controls, interactive minimap, and dot/line/cross backgrounds. | Covers the main viewport workflow. React Flow has more built-in overlay components and control options; Flutter apps can compose additional overlays with normal widgets. |
-| Subflows | Parent-relative positions and dragging a parent with its descendants. | Partial: FFlow does not currently constrain children to parent bounds or automatically resize parents. React Flow supports parent extents and parent expansion options. |
-| Accessibility and integrations | Basic editor shortcuts; custom UI is built with Flutter widgets and Dart. | FFlow does not yet provide React Flow's full focus/ARIA keyboard-navigation behavior, React hooks/store, DOM/CSS integration, or first-party extension ecosystem. |
+| Graph state | Controlled `nodes`/`edges` or `FlowGraphController`, selection, node/edge lookup, filtered node/handle connections, neighborhood and rectangle intersection queries, immutable change helpers, and typed snapshots. | Covers graph state and common instance queries; React Flow also has React hooks and store subscriptions integrated with React rendering. |
+| Nodes and selection | Custom Flutter nodes, measured or fixed dimensions, eight-direction resizing, drag handles, configurable origin/extents, parent-bound dragging, z-order, single/multi-select, partial/full box selection, keyboard focus/movement, and lifecycle events. | Covers common graph editing. Gesture arbitration and browser accessibility differ from React Flow's DOM-based implementation. |
+| Connections | Named handles, click or drag connections, capacity/duplicate checks, custom validation, strict source-to-target mode, loose source-to-source mode, custom preview lines, and source/target-specific reconnection. Loose-mode target handles can also act as connection starts. | Common connection behavior is covered; React Flow's DOM handles and pointer model do not map one-to-one to Flutter. |
+| Edges | Five path styles, floating endpoints, curve/bend controls, marker colors, labels, animation, z-order, custom edge renderers, toolbars, accessibility labels, and reconnection callbacks. | Common edge rendering and editing are covered. React Flow has a broader SVG/DOM overlay customization surface; Flutter uses painters and widgets. |
+| Viewport and canvas chrome | Controller, coordinate conversion, scroll and double-click zoom, fit-to-view/bounds, centering, bounded panning, optional viewport culling, controls with lock/custom buttons, interactive minimap, and backgrounds. | Covers core navigation and editor chrome. Large graph culling is opt-in and should be benchmarked for each app's node widgets. |
+| Subflows | Parent-relative positions, parent-bounds constraints, group dragging, automatic parent expansion in any direction, and child preservation when deleting a parent. | Covers common subflow behavior; advanced nested layout policies remain application-defined. |
+| Accessibility and integrations | Tab focus on rendered nodes/edges, Enter/Space selection, arrow-key movement, labels, and selection announcements. Custom UI uses Flutter widgets and Dart. | Flutter accessibility is semantic-tree based rather than ARIA/DOM based. React hooks, its internal store, and browser-specific integrations are intentionally not mirrored. |
 
-In short, FFlow implements the main graph editing experience—custom nodes, connections, selection, edge rendering, and viewport navigation. The largest gaps are advanced interaction configuration, complete keyboard/screen-reader accessibility, parent-bound behavior, and React Flow's broader component/API ecosystem.
+Example configuration:
+
+```dart
+FFlowCanvas<MyNodeData>(
+  nodes: nodes,
+  edges: edges,
+  nodeBuilder: (context, node, selected) => MyNodeCard(
+    data: node.data,
+    selected: selected,
+  ),
+  selectionOnDrag: true,
+  selectionMode: FlowSelectionMode.partial,
+  connectionMode: FlowConnectionMode.loose,
+  translateExtent: const Rect.fromLTWH(-1000, -1000, 3000, 3000),
+  onlyRenderVisibleElements: true,
+  onNodeDragStart: (node) => debugPrint('drag ${node.id}'),
+  onConnectEnd: (event) => debugPrint('cancelled: ${event.cancelled}'),
+  nodeToolbarBuilder: (context, node) => NodeActions(node: node),
+  edgeToolbarBuilder: (context, edge) => EdgeActions(edge: edge),
+);
+```
+
+Set `dragHandleOnly: true` on a node to limit dragging to an explicitly marked region:
+
+```dart
+FlowNode<MyNodeData>(
+  id: 'review',
+  position: const Offset(320, 180),
+  data: reviewData,
+  dragHandleOnly: true,
+  ariaLabel: 'Editorial review step',
+)
+```
+
+Then wrap the desired header or title area inside that node's builder with `FFlowNodeDragHandle(child: ...)`.
+
+FFlow now covers the main graph editing loop and common graph queries. It does not bundle undo/redo history, clipboard operations, collaboration, automatic edge routing, or a layout algorithm suite; applications can build these on the public graph/controller APIs or add their preferred packages. React Flow's React hooks/store, DOM/CSS behavior, and browser-specific integrations remain framework-specific. Benchmark opt-in viewport culling with the node widgets used by each application.
 
 References: [React Flow interactivity](https://reactflow.dev/learn/concepts/adding-interactivity), [hooks](https://reactflow.dev/api-reference/hooks), [built-in components](https://reactflow.dev/api-reference/components), [sub flows](https://reactflow.dev/learn/layouting/sub-flows), [accessibility](https://reactflow.dev/learn/advanced-use/accessibility), [Flutter desktop support](https://docs.flutter.dev/platform-integration/desktop), and [Flutter Linux builds](https://docs.flutter.dev/platform-integration/linux/building).
 
@@ -167,7 +222,7 @@ lib/
     controllers/             Viewport controller
     geometry/                Handle and edge geometry
     interactions/            Connection and graph interaction logic
-    models/                  Node, edge, handle, selection, snapshot models
+    models/                  Node, edge, handle, event, selection, snapshot models
     rendering/               Grid, edges, and handles
     utils/                   Immutable graph editing helpers
     widgets/                 Controls and minimap

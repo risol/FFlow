@@ -104,12 +104,12 @@ class FlowEdgesPainter<T> extends CustomPainter {
       _drawAnimatedDashes(canvas, path, color, strokeWidth, animation.value);
     }
     if (edge?.markerStart != null) {
-      _drawMarker(canvas, path, color,
+      _drawMarker(canvas, path, edge?.markerColor ?? color,
           atStart: true,
           closed: edge!.markerStart == FlowEdgeMarker.arrowClosed);
     }
     if (edge?.markerEnd != null) {
-      _drawMarker(canvas, path, color,
+      _drawMarker(canvas, path, edge?.markerColor ?? color,
           atStart: false,
           closed: edge!.markerEnd == FlowEdgeMarker.arrowClosed);
     }

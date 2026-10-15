@@ -59,6 +59,26 @@ class FlowGraphSnapshot<T> {
               'hidden': node.hidden,
               'selected': node.selected,
               'parentId': node.parentId,
+              'origin': {'x': node.origin.dx, 'y': node.origin.dy},
+              'extent': node.extent == null
+                  ? null
+                  : {
+                      'left': node.extent!.left,
+                      'top': node.extent!.top,
+                      'right': node.extent!.right,
+                      'bottom': node.extent!.bottom,
+                    },
+              'extentToParent': node.extentToParent,
+              'expandParent': node.expandParent,
+              'minWidth': node.minWidth,
+              'minHeight': node.minHeight,
+              'maxWidth': node.maxWidth,
+              'maxHeight': node.maxHeight,
+              'ariaLabel': node.ariaLabel,
+              'focusable': node.focusable,
+              'dragHandleOnly': node.dragHandleOnly,
+              'autoMeasure': node.autoMeasure,
+              'zIndex': node.zIndex,
             },
         ],
         'edges': [
@@ -69,6 +89,7 @@ class FlowGraphSnapshot<T> {
               'target': edge.targetId,
               'sourceHandle': edge.sourceHandleId,
               'targetHandle': edge.targetHandleId,
+              'targetHandleType': edge.targetHandleType.name,
               'type': edge.type.name,
               'customType': edge.customType,
               'label': edge.label,
@@ -80,9 +101,20 @@ class FlowGraphSnapshot<T> {
               'selected': edge.selected,
               'deletable': edge.deletable,
               'reconnectable': edge.reconnectable,
+              'reconnectableSource': edge.reconnectableSource,
+              'reconnectableTarget': edge.reconnectableTarget,
+              'reconnectableEnds': edge.reconnectableEnds?.name,
+              'curvature': edge.curvature,
+              'stepPosition': edge.stepPosition,
+              'cornerRadius': edge.cornerRadius,
+              'markerColor': edge.markerColor?.toARGB32(),
+              'ariaLabel': edge.ariaLabel,
+              'focusable': edge.focusable,
               'hidden': edge.hidden,
               'animated': edge.animated,
               'interactionWidth': edge.interactionWidth,
+              'floating': edge.floating,
+              'zIndex': edge.zIndex,
               'data': encodeEdgeData == null
                   ? edge.data
                   : encodeEdgeData(edge.data),
@@ -99,6 +131,8 @@ class FlowGraphSnapshot<T> {
     final nodes = (json['nodes'] as List<Object?>).map((entry) {
       final map = entry! as Map<String, Object?>;
       final position = map['position']! as Map<String, Object?>;
+      final origin = map['origin'] as Map<String, Object?>?;
+      final extent = map['extent'] as Map<String, Object?>?;
       final handles =
           (map['handles'] as List<Object?>? ?? const []).map((entry) {
         final handle = entry! as Map<String, Object?>;
@@ -135,6 +169,29 @@ class FlowGraphSnapshot<T> {
         hidden: map['hidden'] as bool? ?? false,
         selected: map['selected'] as bool? ?? false,
         parentId: map['parentId'] as String?,
+        origin: origin == null
+            ? Offset.zero
+            : Offset((origin['x'] as num? ?? 0).toDouble(),
+                (origin['y'] as num? ?? 0).toDouble()),
+        extent: extent == null
+            ? null
+            : Rect.fromLTRB(
+                (extent['left'] as num).toDouble(),
+                (extent['top'] as num).toDouble(),
+                (extent['right'] as num).toDouble(),
+                (extent['bottom'] as num).toDouble(),
+              ),
+        extentToParent: map['extentToParent'] as bool? ?? false,
+        expandParent: map['expandParent'] as bool? ?? false,
+        minWidth: (map['minWidth'] as num? ?? 80).toDouble(),
+        minHeight: (map['minHeight'] as num? ?? 48).toDouble(),
+        maxWidth: (map['maxWidth'] as num? ?? 2000).toDouble(),
+        maxHeight: (map['maxHeight'] as num? ?? 2000).toDouble(),
+        ariaLabel: map['ariaLabel'] as String?,
+        focusable: map['focusable'] as bool? ?? true,
+        dragHandleOnly: map['dragHandleOnly'] as bool? ?? false,
+        autoMeasure: map['autoMeasure'] as bool? ?? false,
+        zIndex: (map['zIndex'] as num? ?? 0).toInt(),
       );
     }).toList(growable: false);
 
@@ -146,6 +203,9 @@ class FlowGraphSnapshot<T> {
         targetId: map['target']! as String,
         sourceHandleId: map['sourceHandle'] as String?,
         targetHandleId: map['targetHandle'] as String?,
+        targetHandleType: FlowHandleType.values.byName(
+          map['targetHandleType'] as String? ?? FlowHandleType.target.name,
+        ),
         type: FlowEdgeType.values.byName(map['type'] as String? ?? 'bezier'),
         customType: map['customType'] as String?,
         label: map['label'] as String?,
@@ -158,9 +218,25 @@ class FlowGraphSnapshot<T> {
         selected: map['selected'] as bool? ?? false,
         deletable: map['deletable'] as bool? ?? true,
         reconnectable: map['reconnectable'] as bool? ?? true,
+        reconnectableSource: map['reconnectableSource'] as bool? ?? true,
+        reconnectableTarget: map['reconnectableTarget'] as bool? ?? true,
+        reconnectableEnds: map['reconnectableEnds'] == null
+            ? null
+            : FlowReconnectable.values
+                .byName(map['reconnectableEnds'] as String),
+        curvature: (map['curvature'] as num? ?? 0.5).toDouble(),
+        stepPosition: (map['stepPosition'] as num? ?? 0.5).toDouble(),
+        cornerRadius: (map['cornerRadius'] as num? ?? 8).toDouble(),
+        markerColor: map['markerColor'] == null
+            ? null
+            : Color((map['markerColor'] as num).toInt()),
+        ariaLabel: map['ariaLabel'] as String?,
+        focusable: map['focusable'] as bool? ?? true,
         hidden: map['hidden'] as bool? ?? false,
         animated: map['animated'] as bool? ?? false,
         interactionWidth: (map['interactionWidth'] as num? ?? 20).toDouble(),
+        floating: map['floating'] as bool? ?? false,
+        zIndex: (map['zIndex'] as num? ?? 0).toInt(),
         data:
             decodeEdgeData == null ? map['data'] : decodeEdgeData(map['data']),
       );

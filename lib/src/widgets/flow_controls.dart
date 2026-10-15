@@ -13,6 +13,9 @@ class FFlowControls<T> extends StatelessWidget {
     this.padding = 72,
     this.backgroundColor = const Color(0xF0191D27),
     this.foregroundColor = const Color(0xFFADB4C3),
+    this.locked,
+    this.onLockChanged,
+    this.additionalControls = const [],
   });
 
   final FlowCanvasController controller;
@@ -21,6 +24,14 @@ class FFlowControls<T> extends StatelessWidget {
   final double padding;
   final Color backgroundColor;
   final Color foregroundColor;
+  final bool? locked;
+
+  /// Called with the new lock value. The host should pass the corresponding
+  /// `panEnabled` and `zoomEnabled` values back to FFlowCanvas.
+  final ValueChanged<bool>? onLockChanged;
+
+  /// App-provided buttons appended to the built-in viewport controls.
+  final List<Widget> additionalControls;
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +67,19 @@ class FFlowControls<T> extends StatelessWidget {
             padding: padding,
           ),
         ),
+        if (onLockChanged != null) ...[
+          const Divider(height: 1, color: Color(0xFF333A49)),
+          _ControlButton(
+            icon: locked == true ? Icons.lock_rounded : Icons.lock_open_rounded,
+            tooltip: locked == true ? 'Unlock canvas' : 'Lock canvas',
+            color: foregroundColor,
+            onPressed: () => onLockChanged!(locked != true),
+          ),
+        ],
+        if (additionalControls.isNotEmpty) ...[
+          const Divider(height: 1, color: Color(0xFF333A49)),
+          ...additionalControls,
+        ],
       ]),
     );
   }

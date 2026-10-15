@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/flow_canvas_controller.dart';
 import '../geometry/flow_geometry.dart';
+import '../models/flow_edge.dart';
 import '../models/flow_node.dart';
 
 /// A compact graph overview that can be clicked or dragged to navigate.
@@ -11,6 +12,7 @@ class FFlowMiniMap<T> extends StatelessWidget {
   const FFlowMiniMap({
     super.key,
     required this.nodes,
+    this.edges = const [],
     required this.controller,
     required this.viewportSize,
     this.width = 190,
@@ -20,9 +22,15 @@ class FFlowMiniMap<T> extends StatelessWidget {
     this.nodeColor = const Color(0xFF7569C8),
     this.viewportColor = const Color(0xFFAFA4FF),
     this.nodeColorFor,
+    this.nodeBorderColorFor,
+    this.nodeBorderWidth = 0,
+    this.edgeColor = const Color(0xFF657083),
+    this.showNodes = true,
+    this.showViewport = true,
   });
 
   final List<FlowNode<T>> nodes;
+  final List<FlowEdge> edges;
   final FlowCanvasController controller;
   final Size viewportSize;
   final double width;
@@ -32,6 +40,11 @@ class FFlowMiniMap<T> extends StatelessWidget {
   final Color nodeColor;
   final Color viewportColor;
   final Color Function(FlowNode<T> node)? nodeColorFor;
+  final Color Function(FlowNode<T> node)? nodeBorderColorFor;
+  final double nodeBorderWidth;
+  final Color edgeColor;
+  final bool showNodes;
+  final bool showViewport;
 
   @override
   Widget build(BuildContext context) {
@@ -75,11 +88,17 @@ class FFlowMiniMap<T> extends StatelessWidget {
                   child: CustomPaint(
                     painter: _MiniMapPainter<T>(
                       nodes: nodes,
+                      edges: edges,
                       bounds: bounds,
                       viewportRect: viewportRect,
                       transform: map,
                       nodeColor: nodeColor,
                       nodeColorFor: nodeColorFor,
+                      nodeBorderColorFor: nodeBorderColorFor,
+                      nodeBorderWidth: nodeBorderWidth,
+                      edgeColor: edgeColor,
+                      showNodes: showNodes,
+                      showViewport: showViewport,
                       viewportColor: viewportColor,
                     ),
                     size: Size.infinite,
@@ -129,27 +148,58 @@ class _MiniMapTransform {
 class _MiniMapPainter<T> extends CustomPainter {
   const _MiniMapPainter({
     required this.nodes,
+    required this.edges,
     required this.bounds,
     required this.viewportRect,
     required this.transform,
     required this.nodeColor,
     required this.nodeColorFor,
+    required this.nodeBorderColorFor,
+    required this.nodeBorderWidth,
+    required this.edgeColor,
+    required this.showNodes,
+    required this.showViewport,
     required this.viewportColor,
   });
 
   final List<FlowNode<T>> nodes;
+  final List<FlowEdge> edges;
   final Rect bounds;
   final Rect viewportRect;
   final _MiniMapTransform transform;
   final Color nodeColor;
   final Color Function(FlowNode<T> node)? nodeColorFor;
+  final Color Function(FlowNode<T> node)? nodeBorderColorFor;
+  final double nodeBorderWidth;
+  final Color edgeColor;
+  final bool showNodes;
+  final bool showViewport;
   final Color viewportColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (bounds.isEmpty) return;
     final nodesById = {for (final node in nodes) node.id: node};
-    for (final node in nodes) {
+    canvas.save();
+    canvas.translate(
+      transform.left - bounds.left * transform.scale,
+      transform.top - bounds.top * transform.scale,
+    );
+    canvas.scale(transform.scale);
+    for (final edge in edges) {
+      if (edge.hidden) continue;
+      final path = FlowGeometry.edgePathFor(edge, nodesById);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = edge.color ?? edgeColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(1.0, edge.strokeWidth * 2)
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    canvas.restore();
+    for (final node in showNodes ? nodes : <FlowNode<T>>[]) {
       if (!FlowGeometry.isVisible(node, nodesById)) continue;
       final position = FlowGeometry.absolutePosition(node, nodesById);
       final rect = transform.toMap(Rect.fromLTWH(
@@ -162,7 +212,18 @@ class _MiniMapPainter<T> extends CustomPainter {
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()..color = nodeColorFor?.call(node) ?? nodeColor,
       );
+      final border = nodeBorderColorFor?.call(node);
+      if (border != null && nodeBorderWidth > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+          Paint()
+            ..color = border
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = nodeBorderWidth,
+        );
+      }
     }
+    if (!showViewport) return;
     final view = transform.toMap(viewportRect).intersect(Offset.zero & size);
     if (!view.isEmpty) {
       canvas.drawRect(
@@ -184,6 +245,7 @@ class _MiniMapPainter<T> extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MiniMapPainter<T> oldDelegate) =>
       oldDelegate.nodes != nodes ||
+      oldDelegate.edges != edges ||
       oldDelegate.bounds != bounds ||
       oldDelegate.viewportRect != viewportRect ||
       oldDelegate.transform.scale != transform.scale ||
@@ -191,5 +253,10 @@ class _MiniMapPainter<T> extends CustomPainter {
       oldDelegate.transform.top != transform.top ||
       oldDelegate.nodeColor != nodeColor ||
       oldDelegate.nodeColorFor != nodeColorFor ||
+      oldDelegate.nodeBorderColorFor != nodeBorderColorFor ||
+      oldDelegate.nodeBorderWidth != nodeBorderWidth ||
+      oldDelegate.edgeColor != edgeColor ||
+      oldDelegate.showNodes != showNodes ||
+      oldDelegate.showViewport != showViewport ||
       oldDelegate.viewportColor != viewportColor;
 }
