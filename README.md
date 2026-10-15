@@ -37,6 +37,25 @@ FFlowCanvas<MyNodeData>(
 
 By default, node and edge lists are controlled by the host app. FFlow reports changes through callbacks; the host stores the updated lists and rebuilds the canvas. Apps can instead pass a `FlowGraphController` to own observable graph state and query it without wiring list callbacks themselves.
 
+For typed, fine-grained updates, use `onNodesChange` and `onEdgesChange`. Each callback receives a batch of `FlowNodeChange` or `FlowEdgeChange` values, which can be applied with `FlowGraphUtils`. These callbacks run before the compatibility list callbacks (`onNodesChanged` and `onEdgesChanged`); use one callback style to update controlled state.
+
+```dart
+FFlowCanvas<MyNodeData>(
+  nodes: nodes,
+  edges: edges,
+  nodeBuilder: (context, node, selected) => MyNodeCard(
+    data: node.data,
+    selected: selected,
+  ),
+  onNodesChange: (changes) => setState(() {
+    nodes = FlowGraphUtils.applyNodeChanges(changes, nodes);
+  }),
+  onEdgesChange: (changes) => setState(() {
+    edges = FlowGraphUtils.applyEdgeChanges(changes, edges);
+  }),
+);
+```
+
 ```dart
 final graph = FlowGraphController<MyNodeData>(nodes: nodes, edges: edges);
 
@@ -218,7 +237,7 @@ The example includes platform runners for Windows, Linux, macOS, and Web. Androi
 lib/
   fflow.dart                 Public package API
   src/
-    canvas/                  Reusable graph canvas and event orchestration
+    canvas/                  Canvas shell, interactions, node/edge rendering, and change dispatch
     controllers/             Viewport controller
     geometry/                Handle and edge geometry
     interactions/            Connection and graph interaction logic
@@ -226,6 +245,7 @@ lib/
     rendering/               Grid, edges, and handles
     utils/                   Immutable graph editing helpers
     widgets/                 Controls and minimap
+test/                       Graph utility and canvas callback tests
 example/
   lib/                       Runnable demonstration app
   windows/, linux/, macos/, web/  Supported example app platform runners
