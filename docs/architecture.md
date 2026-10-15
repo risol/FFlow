@@ -18,7 +18,7 @@ lib/
     widgets/                             Controls and minimap
 example/
   lib/                                   Workflow editor demo
-  windows/, linux/, macos/, web/, ...   Demo application runners
+  windows/, linux/, macos/, web/         Supported demo application runners
 docs/architecture.md                    Package boundaries and design notes
 ```
 
