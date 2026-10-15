@@ -2,6 +2,8 @@
 
 FFlow is a reusable Flutter SDK for building interactive node and edge editors. The root package contains the public API and canvas implementation. The runnable workflow editor is an example app under [`example/`](example/).
 
+![FFlow workflow editor example](docs/images/fflow-workflow-editor.png)
+
 ## Add FFlow to an app
 
 For local development, add the package to your app's `pubspec.yaml`:
@@ -76,6 +78,41 @@ This compares FFlow's implemented SDK APIs with React Flow's documented core fea
 In short, FFlow implements the main graph editing experience—custom nodes, connections, selection, edge rendering, and viewport navigation. The largest gaps are advanced interaction configuration, complete keyboard/screen-reader accessibility, parent-bound behavior, and React Flow's broader component/API ecosystem.
 
 References: [React Flow interactivity](https://reactflow.dev/learn/concepts/adding-interactivity), [hooks](https://reactflow.dev/api-reference/hooks), [built-in components](https://reactflow.dev/api-reference/components), [sub flows](https://reactflow.dev/learn/layouting/sub-flows), [accessibility](https://reactflow.dev/learn/advanced-use/accessibility), [Flutter desktop support](https://docs.flutter.dev/platform-integration/desktop), and [Flutter Linux builds](https://docs.flutter.dev/platform-integration/linux/building).
+
+## Versioning and releases
+
+The SDK version is defined by `version` in the repository-root `pubspec.yaml`. The example app has its own version in `example/pubspec.yaml`; it consumes FFlow through a local path dependency, so its version does not need to match the SDK.
+
+FFlow currently uses `0.x` versions while its public API is still developing. Record unreleased changes under `Unreleased` in [`CHANGELOG.md`](CHANGELOG.md). When cutting a release, move those notes to a version heading and update the root package version. After `1.0.0`, use Semantic Versioning: patch for compatible fixes, minor for backward-compatible features, and major for breaking API changes. Call out breaking changes explicitly in the changelog.
+
+Release checklist:
+
+1. Update `CHANGELOG.md` and the root `pubspec.yaml` version to the same `x.y.z` version.
+2. Run `flutter analyze`, the available tests, and release builds for the supported targets. Run `flutter pub publish --dry-run` when preparing a pub.dev release.
+3. Commit the release metadata, for example `chore(release): 0.1.0`.
+4. Create and push an annotated Git tag that matches the package version with a `v` prefix:
+
+   ```powershell
+   git tag -a v0.1.0 -m "FFlow 0.1.0"
+   git push origin master
+   git push origin v0.1.0
+   ```
+
+5. Create a GitHub Release from that tag. Publish to pub.dev separately only when that distribution channel is intended.
+
+Do not reuse a version after publishing it. The SDK package does not commit a root `pubspec.lock`; the runnable example is an app and keeps `example/pubspec.lock` under version control.
+
+Once a release tag exists, apps that consume FFlow directly from GitHub can pin that tag instead of using a local path. Replace the sample tag with the version being consumed:
+
+```yaml
+dependencies:
+  fflow:
+    git:
+      url: https://github.com/risol/FFlow.git
+      ref: v0.1.0
+```
+
+Dart references: [pubspec version rules](https://dart.dev/tools/pub/pubspec) and [package layout, changelog, and lockfile conventions](https://dart.dev/tools/pub/package-layout).
 
 ## SDK entry points
 
