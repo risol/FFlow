@@ -91,9 +91,12 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
           _pointerDownNodeId = null;
         },
         onDoubleTap: () => widget.onNodeDoubleClick?.call(node),
+        // Keep drags that start on a node from falling through to
+        // InteractiveViewer and panning the canvas. For dragHandleOnly nodes,
+        // the nested FFlowNodeDragHandle recognizer still starts node drags.
         onPanStart: node.draggable && !node.dragHandleOnly
             ? (details) => _startNodeDrag(node, details)
-            : null,
+            : (_) {},
         onPanUpdate:
             node.draggable && !node.dragHandleOnly ? _updateNodeDrag : null,
         onPanEnd: node.draggable && !node.dragHandleOnly ? _endNodeDrag : null,

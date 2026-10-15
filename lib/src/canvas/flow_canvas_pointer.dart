@@ -18,10 +18,11 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
     final nodesById = {for (final node in _nodes) node.id: node};
     FlowNode<T>? hitNode;
     for (final node in _orderedVisibleNodes(nodesById).reversed) {
+      // Match the node GestureDetector's actual bounds. Inflating this hit area
+      // claims narrow gaps between nearby nodes even though no node recognizer
+      // is under the pointer, so InteractiveViewer wins and pans the canvas.
       if (FlowGeometry.isVisible(node, nodesById) &&
-          FlowGeometry.nodeRect(node, nodesById)
-              .inflate(12)
-              .contains(scenePoint)) {
+          FlowGeometry.nodeRect(node, nodesById).contains(scenePoint)) {
         hitNode = node;
         break;
       }
