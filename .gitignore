@@ -1,0 +1,28 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/example/build/
+/coverage/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+/pubspec.lock
+
+# Flutter example build files
+/example/android/local.properties
+/example/ios/Flutter/.last_build_id
+/example/linux/flutter/ephemeral/
+/example/macos/Flutter/ephemeral/
+/example/windows/flutter/ephemeral/
