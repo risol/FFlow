@@ -32,6 +32,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
       selectedNodeIds: _selectedNodes,
     );
     _pointerCaptures[event.pointer] = capture;
+    _lastPointerGlobalPositions[event.pointer] = event.position;
     _interactionSession ??= FlowInteractionSession(
       pointerId: event.pointer,
       kind: FlowInteractionKind.pressed,
@@ -150,6 +151,9 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
+    if (_pointerCaptures.containsKey(event.pointer)) {
+      _lastPointerGlobalPositions[event.pointer] = event.position;
+    }
     _updateHover(event);
     _updateCapturedNodeDrag(event);
     final interaction = _interactionSession;

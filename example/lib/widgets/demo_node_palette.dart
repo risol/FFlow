@@ -17,11 +17,11 @@ class DemoNodePalette extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 18, 16, 14),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 18, 16, 14),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

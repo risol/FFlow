@@ -121,7 +121,7 @@ class _DemoPropertiesPanelState extends State<DemoPropertiesPanel> {
               ),
               const SizedBox(height: 15),
               if (widget.node case final node?) ...[
-                _FieldLabel('STEP NAME'),
+                const _FieldLabel('STEP NAME'),
                 const SizedBox(height: 6),
                 _EditorTextField(
                   controller: _titleController,
@@ -129,7 +129,7 @@ class _DemoPropertiesPanelState extends State<DemoPropertiesPanel> {
                   maxLines: 1,
                 ),
                 const SizedBox(height: 12),
-                _FieldLabel('DESCRIPTION'),
+                const _FieldLabel('DESCRIPTION'),
                 const SizedBox(height: 6),
                 _EditorTextField(
                   controller: _descriptionController,
@@ -181,7 +181,7 @@ class _DemoPropertiesPanelState extends State<DemoPropertiesPanel> {
                   value: widget.targetTitle ?? edge.targetId,
                 ),
                 const SizedBox(height: 14),
-                _FieldLabel('CONNECTION LABEL'),
+                const _FieldLabel('CONNECTION LABEL'),
                 const SizedBox(height: 6),
                 _EditorTextField(
                   controller: _labelController,
@@ -189,10 +189,10 @@ class _DemoPropertiesPanelState extends State<DemoPropertiesPanel> {
                   maxLines: 1,
                 ),
                 const SizedBox(height: 12),
-                _FieldLabel('ROUTING STYLE'),
+                const _FieldLabel('ROUTING STYLE'),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<FlowEdgeType>(
-                  value: _edgeType,
+                  initialValue: _edgeType,
                   decoration: _fieldDecoration(),
                   dropdownColor: const Color(0xFF202532),
                   items: [

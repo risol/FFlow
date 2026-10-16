@@ -591,6 +591,8 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   Map<String, int> _edgePaintRanks = {};
   final FlowHitTestEngine _flowHitTestEngine = const FlowHitTestEngine();
   final Map<int, FlowPointerCapture> _pointerCaptures = {};
+  // Pointer moves can arrive before a drag recognizer claims the gesture.
+  final Map<int, Offset> _lastPointerGlobalPositions = {};
   final Map<Object, Set<int>> _gesturePointerIds = {};
   final ValueNotifier<(Offset, Offset)?> _connectionPreview =
       ValueNotifier<(Offset, Offset)?>(null);

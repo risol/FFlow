@@ -509,8 +509,9 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     if (input == null || input.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(input);
-      if (decoded is! Map)
+      if (decoded is! Map) {
         throw const FormatException('Expected a JSON object.');
+      }
       final map = Map<String, Object?>.from(decoded);
       final name = map['workflowName'];
       final snapshot = FlowGraphSnapshot<DemoNodeData>.fromJson(

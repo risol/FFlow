@@ -41,6 +41,9 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
     _connectionPoint = _screenToFlow(local);
     _syncConnectionPreview();
     _rebuild(() {});
+    _updateConnectionAt(
+      _lastPointerGlobalPositions[pointerId] ?? details.globalPosition,
+    );
   }
 
   void _syncConnectionPreview() {
@@ -354,6 +357,9 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
     _connectionPoint = target;
     _syncConnectionPreview();
     _rebuild(() {});
+    _updateConnectionAt(
+      _lastPointerGlobalPositions[pointerId] ?? details.globalPosition,
+    );
   }
 
   Widget _buildReconnectHandle(FlowEdge edge, bool sourceSide, Offset point) =>

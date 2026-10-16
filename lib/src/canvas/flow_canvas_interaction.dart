@@ -131,6 +131,7 @@ extension _FlowCanvasInteraction<T> on _FFlowCanvasState<T> {
     }
 
     _pointerCaptures.remove(pointerId);
+    _lastPointerGlobalPositions.remove(pointerId);
     _FlowInteractionLocks.noDrag.remove(pointerId);
     _FlowInteractionLocks.noPan.remove(pointerId);
     _FlowInteractionLocks.dragHandle.remove(pointerId);
