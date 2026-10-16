@@ -592,6 +592,8 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   final FlowHitTestEngine _flowHitTestEngine = const FlowHitTestEngine();
   final Map<int, FlowPointerCapture> _pointerCaptures = {};
   final Map<Object, Set<int>> _gesturePointerIds = {};
+  final ValueNotifier<(Offset, Offset)?> _connectionPreview =
+      ValueNotifier<(Offset, Offset)?>(null);
   FlowInteractionSession? _interactionSession;
   FlowAlignmentGuides? _alignmentGuides;
   bool _publishingGraphController = false;
@@ -776,6 +778,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     _animationController.dispose();
     _viewportAnimationController?.dispose();
     _autoPanTicker?.dispose();
+    _connectionPreview.dispose();
     _ownedController.dispose();
     super.dispose();
   }
@@ -1101,22 +1104,35 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
 
   void _refreshGraphIndex() {
     _graphRevision++;
-    final geometry = Object.hashAll([
-      for (final node in _nodes)
+    var geometry = 0;
+    var hitTestProperties = 0;
+    for (final node in _nodes) {
+      geometry = Object.hash(
+        geometry,
         Object.hash(
-            node.id,
-            node.position,
-            node.width,
-            node.height,
-            node.origin,
-            node.parentId,
-            Object.hashAll(node.resolvedHandles.map((handle) => Object.hash(
-                  handle.id,
-                  handle.type,
-                  handle.position,
-                  handle.offset,
-                )))),
-      for (final edge in _edges)
+          node.id,
+          node.position,
+          node.width,
+          node.height,
+          node.origin,
+          node.parentId,
+          Object.hashAll(node.resolvedHandles.map((handle) => Object.hash(
+                handle.id,
+                handle.type,
+                handle.position,
+                handle.offset,
+              ))),
+        ),
+      );
+      hitTestProperties = Object.hash(
+        hitTestProperties,
+        node.id,
+        node.hidden,
+      );
+    }
+    for (final edge in _edges) {
+      geometry = Object.hash(
+        geometry,
         Object.hash(
           edge.id,
           edge.sourceId,
@@ -1131,10 +1147,27 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
           edge.cornerRadius,
           Object.hashAll(edge.controlPoints),
         ),
-    ]);
+      );
+      hitTestProperties = Object.hash(
+        hitTestProperties,
+        edge.id,
+        edge.hidden,
+        edge.interactionWidth,
+      );
+    }
     if (geometry != _geometryRevisionSignature) {
       _geometryRevision++;
       _geometryRevisionSignature = geometry;
+    }
+    final hitTestRevision = Object.hash(
+      geometry,
+      widget.nodeHitTestTolerance,
+      widget.minZoom,
+      hitTestProperties,
+    );
+    if (hitTestRevision != _hitTestRevisionSignature) {
+      _hitTestIndexDirty = true;
+      _hitTestRevisionSignature = hitTestRevision;
     }
     _graphIndex = FlowGraphIndex<T>(
       nodes: _nodes,
@@ -1143,7 +1176,6 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
       geometryRevision: _geometryRevision,
     );
     _edgeGeometryCache.retainEdges(_edges);
-    _hitTestIndexDirty = true;
     _cancelInteractionIfTargetWasRemoved();
   }
 
@@ -1171,6 +1203,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   }
 
   int? _geometryRevisionSignature;
+  int? _hitTestRevisionSignature;
 
   void _updateSceneFrame(Size viewportSize) {
     var bounds = Rect.fromLTWH(
@@ -1204,6 +1237,11 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _transformController.value = Matrix4.copy(_transformController.value);
+      // _updateSceneFrame runs inside the viewport LayoutBuilder, after the
+      // edge painters have already been created for this build. Rebuild once
+      // after the new scene origin is committed so painters use the same
+      // offset as the nodes on the first rendered frame.
+      _rebuild(() {});
     });
   }
 
@@ -1454,37 +1492,41 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                 ),
                               ),
                             ...edgeLayers,
-                            if (widget.connectionLineBuilder == null &&
-                                _connectionStart != null &&
-                                _connectionPoint != null)
-                              Positioned.fill(
-                                child: CustomPaint(
-                                  painter: FlowEdgesPainter<T>(
-                                    nodes: _nodes,
-                                    edges: const [],
-                                    selectedEdgeIds: _selectedEdges,
-                                    defaultColor: widget.edgeColor,
-                                    previewStart: _connectionStart,
-                                    previewTarget: _connectionPoint,
-                                    previewColor: widget.connectionColor,
-                                    animation: _animationController,
-                                    geometryCache: _edgeGeometryCache,
-                                    sceneOffset: _sceneOffset,
-                                  ),
-                                ),
+                            Positioned.fill(
+                              child: ValueListenableBuilder<(Offset, Offset)?>(
+                                valueListenable: _connectionPreview,
+                                builder: (context, preview, child) {
+                                  if (preview == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final lineBuilder =
+                                      widget.connectionLineBuilder;
+                                  if (lineBuilder != null) {
+                                    return IgnorePointer(
+                                      child: lineBuilder(
+                                        context,
+                                        preview.$1,
+                                        preview.$2,
+                                      ),
+                                    );
+                                  }
+                                  return CustomPaint(
+                                    painter: FlowEdgesPainter<T>(
+                                      nodes: _nodes,
+                                      edges: const [],
+                                      selectedEdgeIds: _selectedEdges,
+                                      defaultColor: widget.edgeColor,
+                                      previewStart: preview.$1,
+                                      previewTarget: preview.$2,
+                                      previewColor: widget.connectionColor,
+                                      animation: _animationController,
+                                      geometryCache: _edgeGeometryCache,
+                                      sceneOffset: _sceneOffset,
+                                    ),
+                                  );
+                                },
                               ),
-                            if (widget.connectionLineBuilder != null &&
-                                _connectionStart != null &&
-                                _connectionPoint != null)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: widget.connectionLineBuilder!(
-                                    context,
-                                    _connectionStart!,
-                                    _connectionPoint!,
-                                  ),
-                                ),
-                              ),
+                            ),
                             for (final edge in orderedEdges)
                               if (!edge.hidden &&
                                   _edgeInViewport(edge, nodesById) &&

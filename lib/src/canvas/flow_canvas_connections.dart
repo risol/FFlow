@@ -39,20 +39,23 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       nodes: {for (final item in _nodes) item.id: item},
     );
     _connectionPoint = _screenToFlow(local);
+    _syncConnectionPreview();
     _rebuild(() {});
   }
 
-  void _updateConnection(DragUpdateDetails details, {Object? gestureKey}) {
-    if (gestureKey != null &&
-        !_ownsGesturePointer(gestureKey, _connectionPointerId)) {
-      return;
-    }
+  void _syncConnectionPreview() {
+    final start = _connectionStart;
+    final point = _connectionPoint;
+    final next = start == null || point == null ? null : (start, point);
+    if (_connectionPreview.value != next) _connectionPreview.value = next;
+  }
+
+  void _updateConnectionAt(Offset globalPosition) {
     if (_connectingNodeId == null && _reconnectingEdgeId == null) return;
     if (!_connectionThresholdMet) {
       final start = _connectionStartGlobal;
       if (start == null ||
-          (details.globalPosition - start).distance <
-              widget.connectionDragThreshold) {
+          (globalPosition - start).distance < widget.connectionDragThreshold) {
         return;
       }
       _connectionThresholdMet = true;
@@ -66,20 +69,19 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       }
     }
     _autoPanForGesture(
-      details.globalPosition,
+      globalPosition,
       interaction: FlowAutoPanInteraction.connect,
     );
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox) return;
-    final local = renderObject.globalToLocal(details.globalPosition);
+    final local = renderObject.globalToLocal(globalPosition);
     final point = _screenToFlow(local);
-    _rebuild(() {
-      if (_reconnectingEdgeId != null && _reconnectingSource) {
-        _connectionStart = point;
-      } else {
-        _connectionPoint = point;
-      }
-    });
+    if (_reconnectingEdgeId != null && _reconnectingSource) {
+      _connectionStart = point;
+    } else {
+      _connectionPoint = point;
+    }
+    _syncConnectionPreview();
   }
 
   void _endConnection(DragEndDetails details, {Object? gestureKey}) {
@@ -99,6 +101,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
         _connectionGestureStart = null;
         _connectionStartGlobal = null;
         _connectionThresholdMet = false;
+        _syncConnectionPreview();
       });
       final pointerId = _connectionPointerId;
       _connectionPointerId = null;
@@ -190,6 +193,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
         _connectionGestureStart = null;
         _connectionStartGlobal = null;
         _connectionThresholdMet = false;
+        _syncConnectionPreview();
       });
       final pointerId = _connectionPointerId;
       _connectionPointerId = null;
@@ -250,6 +254,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       _connectionGestureStart = null;
       _connectionStartGlobal = null;
       _connectionThresholdMet = false;
+      _syncConnectionPreview();
     });
     final pointerId = _connectionPointerId;
     _connectionPointerId = null;
@@ -293,6 +298,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       _connectionThresholdMet = false;
       _connectionStart = null;
       _connectionPoint = null;
+      _syncConnectionPreview();
     });
     final pointerId = _connectionPointerId;
     _connectionPointerId = null;
@@ -346,6 +352,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
     }
     _connectionStart = source;
     _connectionPoint = target;
+    _syncConnectionPreview();
     _rebuild(() {});
   }
 
@@ -366,10 +373,6 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
                 sourceSide || edge.targetHandleType == FlowHandleType.source,
             enabled: true,
             onPanStart: (details) => _startReconnect(edge, sourceSide, details),
-            onPanUpdate: (details) => _updateConnection(
-              details,
-              gestureKey: _reconnectGestureKey(edge.id, sourceSide),
-            ),
             onPanEnd: (details) => _endConnection(
               details,
               gestureKey: _reconnectGestureKey(edge.id, sourceSide),

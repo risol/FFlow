@@ -152,6 +152,12 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
   void _handlePointerMove(PointerMoveEvent event) {
     _updateHover(event);
     _updateCapturedNodeDrag(event);
+    final interaction = _interactionSession;
+    if (interaction?.pointerId == event.pointer &&
+        (interaction?.kind == FlowInteractionKind.connecting ||
+            interaction?.kind == FlowInteractionKind.reconnecting)) {
+      _updateConnectionAt(event.position);
+    }
     if (_selectionCandidatePointerId == event.pointer &&
         _interactionSession?.kind == FlowInteractionKind.pressed &&
         _interactionSession?.pointerId == event.pointer) {

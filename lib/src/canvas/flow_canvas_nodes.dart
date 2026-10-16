@@ -336,6 +336,7 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
       );
       _connectionStart = anchor;
       _connectionPoint = anchor;
+      _syncConnectionPreview();
       _rebuild(() {});
       return;
     }
@@ -355,6 +356,7 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
         _connectingHandleType = null;
         _connectionStart = null;
         _connectionPoint = null;
+        _syncConnectionPreview();
         _connectionGestureStart = null;
         _connectionStartGlobal = null;
         _connectionThresholdMet = false;
@@ -405,6 +407,7 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
       _connectingHandleType = null;
       _connectionStart = null;
       _connectionPoint = null;
+      _syncConnectionPreview();
       _connectionGestureStart = null;
       _connectionStartGlobal = null;
       _connectionThresholdMet = false;
@@ -440,12 +443,6 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
               : null,
           onPanStart: canStart
               ? (details) => _startConnection(node, handle, details)
-              : null,
-          onPanUpdate: canStart
-              ? (details) => _updateConnection(
-                    details,
-                    gestureKey: _connectionGestureKey(node.id, handle.id),
-                  )
               : null,
           onPanEnd: canStart
               ? (details) => _endConnection(

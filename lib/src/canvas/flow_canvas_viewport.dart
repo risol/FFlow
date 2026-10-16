@@ -138,7 +138,7 @@ extension _FlowCanvasViewportInteractions<T> on _FFlowCanvasState<T> {
       } else {
         _connectionPoint = flowPoint;
       }
-      _rebuild(() {});
+      _syncConnectionPreview();
     }
   }
 

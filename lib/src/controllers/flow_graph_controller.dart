@@ -22,6 +22,7 @@ class FlowGraphController<T> extends ChangeNotifier {
   })  : _nodes = List.unmodifiable(nodes),
         _edges = List.unmodifiable(edges) {
     _index = FlowGraphIndex<T>(nodes: _nodes, edges: _edges);
+    _geometrySignatureValue = _geometrySignature(_nodes, _edges);
   }
 
   List<FlowNode<T>> _nodes;
@@ -29,6 +30,7 @@ class FlowGraphController<T> extends ChangeNotifier {
   late FlowGraphIndex<T> _index;
   int _graphRevision = 0;
   int _geometryRevision = 0;
+  late int _geometrySignatureValue;
 
   List<FlowNode<T>> get nodes => _nodes;
   List<FlowEdge> get edges => _edges;
@@ -73,14 +75,7 @@ class FlowGraphController<T> extends ChangeNotifier {
     String? handleId,
     FlowHandleType? type,
   }) =>
-      List.unmodifiable([
-        for (final entry in _index.edgeIdsByHandleKey.entries)
-          if (entry.key.nodeId == nodeId &&
-              (handleId == null || entry.key.handleId == handleId) &&
-              (type == null || entry.key.type == type))
-            for (final edgeId in entry.value)
-              if (_index.edgesById[edgeId] case final edge?) edge,
-      ]);
+      _index.connectionsForNode(nodeId, handleId: handleId, type: type);
 
   List<FlowEdge> getHandleConnections(
     String nodeId, {
@@ -145,13 +140,17 @@ class FlowGraphController<T> extends ChangeNotifier {
     required Iterable<FlowNode<T>> nodes,
     required Iterable<FlowEdge> edges,
   }) {
-    final nextNodes = List<FlowNode<T>>.unmodifiable(nodes);
-    final nextEdges = List<FlowEdge>.unmodifiable(edges);
+    final nextNodes = identical(nodes, _nodes)
+        ? _nodes
+        : List<FlowNode<T>>.unmodifiable(nodes);
+    final nextEdges =
+        identical(edges, _edges) ? _edges : List<FlowEdge>.unmodifiable(edges);
     if (listEquals(_nodes, nextNodes) && listEquals(_edges, nextEdges)) return;
-    final geometryChanged = _geometrySignature(_nodes, _edges) !=
-        _geometrySignature(nextNodes, nextEdges);
+    final nextGeometrySignature = _geometrySignature(nextNodes, nextEdges);
+    final geometryChanged = _geometrySignatureValue != nextGeometrySignature;
     _nodes = nextNodes;
     _edges = nextEdges;
+    _geometrySignatureValue = nextGeometrySignature;
     _graphRevision++;
     if (geometryChanged) _geometryRevision++;
     _index = FlowGraphIndex<T>(
