@@ -90,14 +90,6 @@ class FlowEdgesPainter<T> extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = const Color(0x99000000)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth + 5
-        ..strokeCap = StrokeCap.round,
-    );
-    canvas.drawPath(
-      path,
-      Paint()
         ..color = color
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
