@@ -19,6 +19,13 @@ jobs:
       - run: dart format --set-exit-if-changed lib test benchmark example/lib
       - run: flutter analyze
       - run: flutter test
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-failures
+          path: test/failures/**
+          if-no-files-found: ignore
       - run: flutter pub publish --dry-run
       - run: flutter test benchmark/large_graph_benchmark_test.dart --reporter expanded
       - uses: actions/upload-artifact@v4
