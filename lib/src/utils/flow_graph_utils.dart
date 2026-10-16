@@ -8,6 +8,7 @@ import '../models/flow_connection.dart';
 import '../models/flow_edge.dart';
 import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
+import '../models/flow_selection.dart';
 import '../models/flow_viewport.dart';
 
 enum FlowNodeChangeType { add, remove, replace, position, dimensions, select }
@@ -54,13 +55,54 @@ class FlowEdgeChange {
 
 /// Return value for deleting nodes and edges by id.
 class FlowDeleteResult<T> {
-  const FlowDeleteResult({required this.nodes, required this.edges});
+  const FlowDeleteResult({
+    required this.nodes,
+    required this.edges,
+    this.deletedNodes = const [],
+    this.deletedEdges = const [],
+  });
+
+  /// Graph state after deletion.
   final List<FlowNode<T>> nodes;
   final List<FlowEdge> edges;
+
+  /// The actual deleted entities, including edges removed by node cascade.
+  final List<FlowNode<T>> deletedNodes;
+  final List<FlowEdge> deletedEdges;
 }
 
 /// Immutable node and edge list operations for controlled graph state.
 abstract final class FlowGraphUtils {
+  /// Returns ids eligible for select-all. Hidden nodes and edges attached to
+  /// hidden nodes are excluded unless [includeHidden] is explicitly enabled.
+  static FlowSelection selectAll<T>({
+    required Iterable<FlowNode<T>> nodes,
+    required Iterable<FlowEdge> edges,
+    bool includeHidden = false,
+  }) {
+    final nodeList = nodes.toList(growable: false);
+    final edgeList = edges.toList(growable: false);
+    final nodesById = {for (final node in nodeList) node.id: node};
+    return FlowSelection(
+      nodes: nodeList
+          .where((node) =>
+              node.selectable &&
+              (includeHidden || FlowGeometry.isVisible(node, nodesById)))
+          .map((n) => n.id),
+      edges: edgeList.where((edge) {
+        if (!edge.selectable) return false;
+        if (includeHidden) return true;
+        final source = nodesById[edge.sourceId];
+        final target = nodesById[edge.targetId];
+        return !edge.hidden &&
+            source != null &&
+            target != null &&
+            FlowGeometry.isVisible(source, nodesById) &&
+            FlowGeometry.isVisible(target, nodesById);
+      }).map((edge) => edge.id),
+    );
+  }
+
   static List<FlowEdge> addEdge(
     List<FlowEdge> edges,
     FlowEdge edge, {
@@ -177,6 +219,19 @@ abstract final class FlowGraphUtils {
         .map((edge) => edge.id)
         .toSet();
     final nodesById = {for (final node in nodes) node.id: node};
+    final deletedNodes = List<FlowNode<T>>.unmodifiable(
+      nodes.where((node) => deletableNodeIds.contains(node.id)),
+    );
+    final deletedEdgeIds = <String>{
+      ...deletableEdgeIds,
+      for (final edge in edges)
+        if (deletableNodeIds.contains(edge.sourceId) ||
+            deletableNodeIds.contains(edge.targetId))
+          edge.id,
+    };
+    final deletedEdges = List<FlowEdge>.unmodifiable(
+      edges.where((edge) => deletedEdgeIds.contains(edge.id)),
+    );
     return FlowDeleteResult<T>(
       nodes: List.unmodifiable([
         for (final node in nodes)
@@ -192,10 +247,10 @@ abstract final class FlowGraphUtils {
             else
               node,
       ]),
-      edges: List.unmodifiable(edges.where((edge) =>
-          !deletableEdgeIds.contains(edge.id) &&
-          !deletableNodeIds.contains(edge.sourceId) &&
-          !deletableNodeIds.contains(edge.targetId))),
+      edges: List.unmodifiable(
+          edges.where((edge) => !deletedEdgeIds.contains(edge.id))),
+      deletedNodes: deletedNodes,
+      deletedEdges: deletedEdges,
     );
   }
 

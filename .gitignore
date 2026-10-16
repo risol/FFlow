@@ -12,7 +12,10 @@
 .pub/
 /build/
 /example/build/
+/example/android/
+/example/ios/
 /coverage/
+/benchmark/results.json
 
 # IDEs
 .idea/

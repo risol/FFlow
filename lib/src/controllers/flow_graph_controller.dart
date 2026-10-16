@@ -3,6 +3,8 @@ import 'package:flutter/painting.dart';
 
 import '../models/flow_edge.dart';
 import '../models/flow_graph_snapshot.dart';
+import '../models/flow_graph_index.dart';
+import '../models/flow_diagnostic.dart';
 import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
 import '../models/flow_selection.dart';
@@ -18,37 +20,52 @@ class FlowGraphController<T> extends ChangeNotifier {
     Iterable<FlowNode<T>> nodes = const [],
     Iterable<FlowEdge> edges = const [],
   })  : _nodes = List.unmodifiable(nodes),
-        _edges = List.unmodifiable(edges);
+        _edges = List.unmodifiable(edges) {
+    _index = FlowGraphIndex<T>(nodes: _nodes, edges: _edges);
+  }
 
   List<FlowNode<T>> _nodes;
   List<FlowEdge> _edges;
+  late FlowGraphIndex<T> _index;
+  int _graphRevision = 0;
+  int _geometryRevision = 0;
 
   List<FlowNode<T>> get nodes => _nodes;
   List<FlowEdge> get edges => _edges;
+  FlowGraphIndex<T> get index => _index;
+  int get graphRevision => _graphRevision;
+  int get geometryRevision => _geometryRevision;
 
   FlowSelection get selection => FlowSelection(
         nodes: _nodes.where((node) => node.selected).map((node) => node.id),
         edges: _edges.where((edge) => edge.selected).map((edge) => edge.id),
       );
 
-  FlowNode<T>? getNode(String id) =>
-      _nodes.where((node) => node.id == id).firstOrNull;
+  List<FlowDiagnostic> validate({FlowViewport? viewport}) =>
+      FlowGraphValidator.validate<T>(
+        nodes: _nodes,
+        edges: _edges,
+        viewport: viewport,
+      );
 
-  FlowEdge? getEdge(String id) =>
-      _edges.where((edge) => edge.id == id).firstOrNull;
+  FlowNode<T>? getNode(String id) => _index.nodesById[id];
+
+  FlowEdge? getEdge(String id) => _index.edgesById[id];
 
   List<FlowNode<T>> getNodes({Iterable<String>? ids}) {
     if (ids == null) return _nodes;
-    final requested = ids.toSet();
-    return List.unmodifiable(
-        _nodes.where((node) => requested.contains(node.id)));
+    return List.unmodifiable([
+      for (final id in ids)
+        if (_index.nodesById[id] case final node?) node,
+    ]);
   }
 
   List<FlowEdge> getEdges({Iterable<String>? ids}) {
     if (ids == null) return _edges;
-    final requested = ids.toSet();
-    return List.unmodifiable(
-        _edges.where((edge) => requested.contains(edge.id)));
+    return List.unmodifiable([
+      for (final id in ids)
+        if (_index.edgesById[id] case final edge?) edge,
+    ]);
   }
 
   List<FlowEdge> getNodeConnections(
@@ -56,43 +73,32 @@ class FlowGraphController<T> extends ChangeNotifier {
     String? handleId,
     FlowHandleType? type,
   }) =>
-      FlowGraphUtils.getHandleConnections(
-        nodeId,
-        _edges,
-        handleId: handleId,
-        type: type,
-      );
+      List.unmodifiable([
+        for (final entry in _index.edgeIdsByHandleKey.entries)
+          if (entry.key.nodeId == nodeId &&
+              (handleId == null || entry.key.handleId == handleId) &&
+              (type == null || entry.key.type == type))
+            for (final edgeId in entry.value)
+              if (_index.edgesById[edgeId] case final edge?) edge,
+      ]);
 
   List<FlowEdge> getHandleConnections(
     String nodeId, {
     String? handleId,
     FlowHandleType? type,
   }) =>
-      FlowGraphUtils.getHandleConnections(
-        nodeId,
-        _edges,
-        handleId: handleId,
-        type: type,
-      );
+      getNodeConnections(nodeId, handleId: handleId, type: type);
 
   List<FlowNode<T>> getIncomers(String nodeId) {
-    final node = getNode(nodeId);
-    return node == null
-        ? const []
-        : FlowGraphUtils.getIncomers(node, _nodes, _edges);
+    return _index.incomersOf(nodeId);
   }
 
   List<FlowNode<T>> getOutgoers(String nodeId) {
-    final node = getNode(nodeId);
-    return node == null
-        ? const []
-        : FlowGraphUtils.getOutgoers(node, _nodes, _edges);
+    return _index.outgoersOf(nodeId);
   }
 
   List<FlowEdge> getConnectedEdges(Iterable<String> nodeIds) {
-    final ids = nodeIds.toSet();
-    return List.unmodifiable(_edges.where(
-        (edge) => ids.contains(edge.sourceId) || ids.contains(edge.targetId)));
+    return _index.connectedEdgesOf(nodeIds);
   }
 
   Rect get nodesBounds => FlowGraphUtils.getNodesBounds(_nodes);
@@ -142,10 +148,57 @@ class FlowGraphController<T> extends ChangeNotifier {
     final nextNodes = List<FlowNode<T>>.unmodifiable(nodes);
     final nextEdges = List<FlowEdge>.unmodifiable(edges);
     if (listEquals(_nodes, nextNodes) && listEquals(_edges, nextEdges)) return;
+    final geometryChanged = _geometrySignature(_nodes, _edges) !=
+        _geometrySignature(nextNodes, nextEdges);
     _nodes = nextNodes;
     _edges = nextEdges;
+    _graphRevision++;
+    if (geometryChanged) _geometryRevision++;
+    _index = FlowGraphIndex<T>(
+      nodes: _nodes,
+      edges: _edges,
+      graphRevision: _graphRevision,
+      geometryRevision: _geometryRevision,
+    );
     notifyListeners();
   }
+
+  int _geometrySignature(
+    Iterable<FlowNode<T>> nodes,
+    Iterable<FlowEdge> edges,
+  ) =>
+      Object.hashAll([
+        for (final node in nodes)
+          Object.hash(
+            node.id,
+            node.position,
+            node.width,
+            node.height,
+            node.origin,
+            node.parentId,
+            Object.hashAll(node.resolvedHandles.map((handle) => Object.hash(
+                  handle.id,
+                  handle.type,
+                  handle.position,
+                  handle.offset,
+                ))),
+          ),
+        for (final edge in edges)
+          Object.hash(
+            edge.id,
+            edge.sourceId,
+            edge.targetId,
+            edge.sourceHandleId,
+            edge.targetHandleId,
+            edge.targetHandleType,
+            edge.type,
+            edge.floating,
+            edge.curvature,
+            edge.stepPosition,
+            edge.cornerRadius,
+            Object.hashAll(edge.controlPoints),
+          ),
+      ]);
 
   void setNodes(Iterable<FlowNode<T>> nodes) =>
       setGraph(nodes: nodes, edges: _edges);

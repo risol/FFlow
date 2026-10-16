@@ -7,11 +7,13 @@ class FlowGridPainter extends CustomPainter {
     required this.color,
     required this.spacing,
     this.variant = FlowBackgroundVariant.dots,
+    this.sceneOrigin = Offset.zero,
   });
 
   final Color color;
   final double spacing;
   final FlowBackgroundVariant variant;
+  final Offset sceneOrigin;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -19,17 +21,18 @@ class FlowGridPainter extends CustomPainter {
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1;
-    final offset = spacing / 2;
+    final offsetX = _positiveModulo(spacing / 2 - sceneOrigin.dx, spacing);
+    final offsetY = _positiveModulo(spacing / 2 - sceneOrigin.dy, spacing);
     if (variant == FlowBackgroundVariant.lines) {
-      for (var x = offset; x < size.width; x += spacing) {
+      for (var x = offsetX; x < size.width; x += spacing) {
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
       }
-      for (var y = offset; y < size.height; y += spacing) {
+      for (var y = offsetY; y < size.height; y += spacing) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
       }
     } else {
-      for (var x = offset; x < size.width; x += spacing) {
-        for (var y = offset; y < size.height; y += spacing) {
+      for (var x = offsetX; x < size.width; x += spacing) {
+        for (var y = offsetY; y < size.height; y += spacing) {
           if (variant == FlowBackgroundVariant.dots) {
             canvas.drawCircle(Offset(x, y), 1, paint);
           } else {
@@ -48,7 +51,11 @@ class FlowGridPainter extends CustomPainter {
   bool shouldRepaint(covariant FlowGridPainter oldDelegate) =>
       color != oldDelegate.color ||
       spacing != oldDelegate.spacing ||
-      variant != oldDelegate.variant;
+      variant != oldDelegate.variant ||
+      sceneOrigin != oldDelegate.sceneOrigin;
+
+  double _positiveModulo(double value, double modulus) =>
+      ((value % modulus) + modulus) % modulus;
 }
 
 /// Reusable canvas background that can be composed outside [FFlowCanvas].

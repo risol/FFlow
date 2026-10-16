@@ -5,10 +5,9 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
     if (!widget.onlyRenderVisibleElements) return true;
     final viewport = _sceneViewportRect;
     if (viewport == null) return true;
-    return FlowGeometry.edgePathFor(edge, nodesById)
-        .getBounds()
-        .inflate(edge.interactionWidth)
-        .overlaps(viewport);
+    final geometry = _edgeGeometryCache.result(edge, nodesById);
+    return geometry != null &&
+        geometry.bounds.inflate(edge.interactionWidth).overlaps(viewport);
   }
 
   Widget _toolbarAt(Rect bounds, Widget child) {
@@ -32,8 +31,8 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
       FlowToolbarPlacement.left => Offset(-widget.toolbarOffset, 0),
     };
     return Positioned(
-      left: point.dx + offset.dx,
-      top: point.dy + offset.dy,
+      left: point.dx + _sceneOffset.dx + offset.dx,
+      top: point.dy + _sceneOffset.dy + offset.dy,
       child: FractionalTranslation(translation: translation, child: child),
     );
   }
@@ -43,15 +42,15 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
     Map<String, FlowNode<T>> nodesById,
     double order,
   ) {
-    final point = FlowGeometry.pointAlongPath(
-        FlowGeometry.edgePathFor(edge, nodesById), 0.5);
+    final point = _edgeGeometryCache.result(edge, nodesById)?.labelPosition;
+    if (point == null) return const SizedBox.shrink();
     final focused = _edgeFocusNode(edge.id);
     final label = edge.ariaLabel ??
         edge.label ??
         'Connection from ${edge.sourceId} to ${edge.targetId}';
     return Positioned(
-      left: point.dx - 12,
-      top: point.dy - 12,
+      left: point.dx + _sceneOffset.dx - 12,
+      top: point.dy + _sceneOffset.dy - 12,
       width: 24,
       height: 24,
       child: IgnorePointer(
@@ -102,11 +101,11 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
     final start = FlowGeometry.edgeSource(edge, nodesById);
     final end = FlowGeometry.edgeTarget(edge, nodesById);
     if (start == null || end == null) return const SizedBox.shrink();
-    final point = FlowGeometry.pointAlongPath(
-        FlowGeometry.edgePathFor(edge, nodesById), 0.5);
+    final point = _edgeGeometryCache.result(edge, nodesById)?.labelPosition;
+    if (point == null) return const SizedBox.shrink();
     return Positioned(
-      left: point.dx,
-      top: point.dy,
+      left: point.dx + _sceneOffset.dx,
+      top: point.dy + _sceneOffset.dy,
       child: IgnorePointer(
         child: FractionalTranslation(
           translation: const Offset(-0.5, -0.5),
@@ -132,15 +131,64 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
     final start = FlowGeometry.edgeSource(edge, nodesById);
     final end = FlowGeometry.edgeTarget(edge, nodesById);
     if (start == null || end == null) return const SizedBox.shrink();
-    final point = FlowGeometry.pointAlongPath(
-        FlowGeometry.edgePathFor(edge, nodesById), 0.5);
+    final point = _edgeGeometryCache.result(edge, nodesById)?.labelPosition;
+    if (point == null) return const SizedBox.shrink();
     return Positioned(
-      left: point.dx,
-      top: point.dy,
+      left: point.dx + _sceneOffset.dx,
+      top: point.dy + _sceneOffset.dy,
       child: FractionalTranslation(
         translation: const Offset(-0.5, -0.5),
         child: widget.edgeLabelBuilder!(context, edge),
       ),
     );
+  }
+
+  Widget _buildEdgeControlPoint(FlowEdge edge, int pointIndex, Offset point) =>
+      Positioned(
+        left: point.dx + _sceneOffset.dx - 7,
+        top: point.dy + _sceneOffset.dy - 7,
+        width: 14,
+        height: 14,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
+          onPanStart: (_) => widget.historyController?.beginTransaction(
+            'Move edge control point',
+            _captureGraphState(),
+          ),
+          onPanUpdate: (details) => _moveEdgeControlPoint(
+            edge.id,
+            pointIndex,
+            details.delta / _transformController.value.getMaxScaleOnAxis(),
+          ),
+          onPanEnd: (_) =>
+              widget.historyController?.commitTransaction(_captureGraphState()),
+          onPanCancel: () =>
+              widget.historyController?.commitTransaction(_captureGraphState()),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.connectionColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: const [
+                BoxShadow(color: Color(0x66000000), blurRadius: 4),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  void _moveEdgeControlPoint(String edgeId, int pointIndex, Offset delta) {
+    final index = _edges.indexWhere((edge) => edge.id == edgeId);
+    if (index < 0) return;
+    final edge = _edges[index];
+    if (pointIndex < 0 || pointIndex >= edge.controlPoints.length) return;
+    final points = List<Offset>.of(edge.controlPoints);
+    points[pointIndex] += delta;
+    final next = List<FlowEdge>.of(_edges);
+    next[index] = edge.copyWith(controlPoints: points);
+    _edges = List.unmodifiable(next);
+    _publishEdges();
+    _rebuild(() {});
   }
 }

@@ -11,6 +11,8 @@ import 'flow_viewport.dart';
 /// Node data stays application-defined. Supply [encodeNodeData] and
 /// [decodeNodeData] when converting snapshots to or from JSON.
 class FlowGraphSnapshot<T> {
+  static const currentSchemaVersion = 1;
+
   FlowGraphSnapshot({
     required Iterable<FlowNode<T>> nodes,
     required Iterable<FlowEdge> edges,
@@ -25,8 +27,10 @@ class FlowGraphSnapshot<T> {
   Map<String, Object?> toJson({
     required Object? Function(T data) encodeNodeData,
     Object? Function(Object? data)? encodeEdgeData,
+    bool includeSelection = false,
   }) =>
       {
+        'schemaVersion': currentSchemaVersion,
         'nodes': [
           for (final node in nodes)
             {
@@ -57,7 +61,7 @@ class FlowGraphSnapshot<T> {
               'deletable': node.deletable,
               'connectable': node.connectable,
               'hidden': node.hidden,
-              'selected': node.selected,
+              if (includeSelection) 'selected': node.selected,
               'parentId': node.parentId,
               'origin': {'x': node.origin.dx, 'y': node.origin.dy},
               'extent': node.extent == null
@@ -79,6 +83,7 @@ class FlowGraphSnapshot<T> {
               'dragHandleOnly': node.dragHandleOnly,
               'autoMeasure': node.autoMeasure,
               'zIndex': node.zIndex,
+              'groupable': node.groupable,
             },
         ],
         'edges': [
@@ -98,7 +103,6 @@ class FlowGraphSnapshot<T> {
               'markerStart': edge.markerStart?.name,
               'markerEnd': edge.markerEnd?.name,
               'selectable': edge.selectable,
-              'selected': edge.selected,
               'deletable': edge.deletable,
               'reconnectable': edge.reconnectable,
               'reconnectableSource': edge.reconnectableSource,
@@ -115,6 +119,11 @@ class FlowGraphSnapshot<T> {
               'interactionWidth': edge.interactionWidth,
               'floating': edge.floating,
               'zIndex': edge.zIndex,
+              'controlPoints': [
+                for (final point in edge.controlPoints)
+                  {'x': point.dx, 'y': point.dy},
+              ],
+              if (includeSelection) 'selected': edge.selected,
               'data': encodeEdgeData == null
                   ? edge.data
                   : encodeEdgeData(edge.data),
@@ -128,9 +137,10 @@ class FlowGraphSnapshot<T> {
     required T Function(Object? value) decodeNodeData,
     Object? Function(Object? value)? decodeEdgeData,
   }) {
-    final nodes = (json['nodes'] as List<Object?>).map((entry) {
+    final migrated = migrateJson(json);
+    final nodes = (migrated['nodes'] as List<Object?>).map((entry) {
       final map = entry! as Map<String, Object?>;
-      final position = map['position']! as Map<String, Object?>;
+      final position = map['position'] as Map<String, Object?>? ?? const {};
       final origin = map['origin'] as Map<String, Object?>?;
       final extent = map['extent'] as Map<String, Object?>?;
       final handles =
@@ -152,8 +162,8 @@ class FlowGraphSnapshot<T> {
         id: map['id']! as String,
         type: map['type'] as String? ?? 'default',
         position: Offset(
-          (position['x']! as num).toDouble(),
-          (position['y']! as num).toDouble(),
+          (position['x'] as num? ?? 0).toDouble(),
+          (position['y'] as num? ?? 0).toDouble(),
         ),
         data: decodeNodeData(map['data']),
         width: (map['width'] as num? ?? 240).toDouble(),
@@ -192,11 +202,19 @@ class FlowGraphSnapshot<T> {
         dragHandleOnly: map['dragHandleOnly'] as bool? ?? false,
         autoMeasure: map['autoMeasure'] as bool? ?? false,
         zIndex: (map['zIndex'] as num? ?? 0).toInt(),
+        groupable: map['groupable'] as bool? ?? false,
       );
     }).toList(growable: false);
 
-    final edges = (json['edges'] as List<Object?>).map((entry) {
+    final edges = (migrated['edges'] as List<Object?>).map((entry) {
       final map = entry! as Map<String, Object?>;
+      final controlPoints = (map['controlPoints'] as List<Object?>? ?? const [])
+          .map((point) => point! as Map<String, Object?>)
+          .map((point) => Offset(
+                (point['x'] as num).toDouble(),
+                (point['y'] as num).toDouble(),
+              ))
+          .toList(growable: false);
       return FlowEdge(
         id: map['id']! as String,
         sourceId: map['source']! as String,
@@ -237,6 +255,7 @@ class FlowGraphSnapshot<T> {
         interactionWidth: (map['interactionWidth'] as num? ?? 20).toDouble(),
         floating: map['floating'] as bool? ?? false,
         zIndex: (map['zIndex'] as num? ?? 0).toInt(),
+        controlPoints: controlPoints,
         data:
             decodeEdgeData == null ? map['data'] : decodeEdgeData(map['data']),
       );
@@ -245,9 +264,32 @@ class FlowGraphSnapshot<T> {
     return FlowGraphSnapshot<T>(
       nodes: nodes,
       edges: edges,
-      viewport:
-          FlowViewport.fromJson(json['viewport']! as Map<String, Object?>),
+      viewport: migrated['viewport'] is Map<String, Object?>
+          ? FlowViewport.fromJson(migrated['viewport']! as Map<String, Object?>)
+          : const FlowViewport(x: 0, y: 0, zoom: 1),
     );
+  }
+
+  /// Upgrades older JSON snapshots to [currentSchemaVersion]. Missing schema
+  /// versions are treated as version 0 (the original unversioned format).
+  static Map<String, Object?> migrateJson(Map<String, Object?> source) {
+    final json = Map<String, Object?>.of(source);
+    var version = (json['schemaVersion'] as num?)?.toInt() ?? 0;
+    if (version < 0 || version > currentSchemaVersion) {
+      throw FormatException('Unsupported FFlow snapshot schema $version.');
+    }
+    while (version < currentSchemaVersion) {
+      switch (version) {
+        case 0:
+          json['schemaVersion'] = 1;
+          json['nodes'] ??= <Object?>[];
+          json['edges'] ??= <Object?>[];
+          version = 1;
+      }
+    }
+    json['nodes'] ??= <Object?>[];
+    json['edges'] ??= <Object?>[];
+    return Map.unmodifiable(json);
   }
 
   static FlowEdgeMarker? _marker(String? name) =>

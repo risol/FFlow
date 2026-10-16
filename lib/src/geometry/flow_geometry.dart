@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
 import 'package:flutter/widgets.dart';
 
@@ -42,6 +43,21 @@ abstract final class FlowGeometry {
     }
     return position;
   }
+
+  /// Absolute top-left of [node] in graph coordinates.
+  static Offset nodeAbsoluteTopLeft<T>(
+    FlowNode<T> node,
+    Map<String, FlowNode<T>> nodes,
+  ) =>
+      absolutePosition(node, nodes);
+
+  /// Absolute anchor point represented by [FlowNode.position].
+  static Offset nodeAbsoluteAnchor<T>(
+    FlowNode<T> node,
+    Map<String, FlowNode<T>> nodes,
+  ) =>
+      nodeAbsoluteTopLeft(node, nodes) +
+      Offset(node.width * node.origin.dx, node.height * node.origin.dy);
 
   static Offset _topLeft<T>(Offset anchor, FlowNode<T> node) => Offset(
         anchor.dx - node.width * node.origin.dx,
@@ -97,6 +113,55 @@ abstract final class FlowGeometry {
     return Rect.fromLTWH(position.dx, position.dy, node.width, node.height);
   }
 
+  static Offset inputAnchor<T>(FlowNode<T> node,
+      {Map<String, FlowNode<T>>? nodes}) {
+    final rect = nodes == null
+        ? Rect.fromLTWH(
+            node.position.dx - node.width * node.origin.dx,
+            node.position.dy - node.height * node.origin.dy,
+            node.width,
+            node.height,
+          )
+        : nodeRect(node, nodes);
+    return Offset(rect.left, rect.center.dy);
+  }
+
+  static Offset outputAnchor<T>(FlowNode<T> node,
+      {Map<String, FlowNode<T>>? nodes}) {
+    final rect = nodes == null
+        ? Rect.fromLTWH(
+            node.position.dx - node.width * node.origin.dx,
+            node.position.dy - node.height * node.origin.dy,
+            node.width,
+            node.height,
+          )
+        : nodeRect(node, nodes);
+    return Offset(rect.right, rect.center.dy);
+  }
+
+  static Offset handleAnchor<T>(FlowNode<T> node, FlowHandle handle,
+      {Map<String, FlowNode<T>>? nodes}) {
+    final rect = nodes == null
+        ? Rect.fromLTWH(
+            node.position.dx - node.width * node.origin.dx,
+            node.position.dy - node.height * node.origin.dy,
+            node.width,
+            node.height,
+          )
+        : nodeRect(node, nodes);
+    final offset = handle.offset.clamp(0.0, 1.0).toDouble();
+    return switch (handle.position) {
+      FlowHandlePosition.left =>
+        Offset(rect.left, rect.top + rect.height * offset),
+      FlowHandlePosition.right =>
+        Offset(rect.right, rect.top + rect.height * offset),
+      FlowHandlePosition.top =>
+        Offset(rect.left + rect.width * offset, rect.top),
+      FlowHandlePosition.bottom =>
+        Offset(rect.left + rect.width * offset, rect.bottom),
+    };
+  }
+
   static bool isVisible<T>(
     FlowNode<T> node,
     Map<String, FlowNode<T>> nodes,
@@ -111,37 +176,6 @@ abstract final class FlowGeometry {
       parentId = parent.parentId;
     }
     return true;
-  }
-
-  static Offset inputAnchor<T>(FlowNode<T> node,
-      {Map<String, FlowNode<T>>? nodes}) {
-    final position =
-        nodes == null ? node.position : absolutePosition(node, nodes);
-    return Offset(position.dx, position.dy + node.height / 2);
-  }
-
-  static Offset outputAnchor<T>(FlowNode<T> node,
-      {Map<String, FlowNode<T>>? nodes}) {
-    final position =
-        nodes == null ? node.position : absolutePosition(node, nodes);
-    return Offset(position.dx + node.width, position.dy + node.height / 2);
-  }
-
-  static Offset handleAnchor<T>(FlowNode<T> node, FlowHandle handle,
-      {Map<String, FlowNode<T>>? nodes}) {
-    final position =
-        nodes == null ? node.position : absolutePosition(node, nodes);
-    final offset = handle.offset.clamp(0.0, 1.0).toDouble();
-    return switch (handle.position) {
-      FlowHandlePosition.left =>
-        Offset(position.dx, position.dy + node.height * offset),
-      FlowHandlePosition.right =>
-        Offset(position.dx + node.width, position.dy + node.height * offset),
-      FlowHandlePosition.top =>
-        Offset(position.dx + node.width * offset, position.dy),
-      FlowHandlePosition.bottom =>
-        Offset(position.dx + node.width * offset, position.dy + node.height),
-    };
   }
 
   static FlowHandle? handleFor<T>(
@@ -294,6 +328,62 @@ abstract final class FlowGeometry {
     );
   }
 
+  /// Resolves an edge's complete geometry once for paint, labels and hit tests.
+  static FlowEdgePathResult? edgePathResult<T>(
+    FlowEdge edge,
+    Map<String, FlowNode<T>> nodes,
+  ) {
+    final source = nodes[edge.sourceId];
+    final target = nodes[edge.targetId];
+    final start = edgeSource(edge, nodes);
+    final end = edgeTarget(edge, nodes);
+    if (source == null || target == null || start == null || end == null) {
+      return null;
+    }
+    final sourceHandle =
+        handleFor(source, edge.sourceHandleId, FlowHandleType.source);
+    final targetHandle =
+        handleFor(target, edge.targetHandleId, edge.targetHandleType);
+    if (sourceHandle == null || targetHandle == null) return null;
+    final sourceSide = edge.floating
+        ? _boundarySide(nodeRect(source, nodes), start)
+        : sourceHandle.position;
+    final targetSide = edge.floating
+        ? _boundarySide(nodeRect(target, nodes), end)
+        : targetHandle.position;
+    final path = edge.controlPoints.isEmpty
+        ? edgePath(
+            edge,
+            start,
+            end,
+            sourcePosition: sourceSide,
+            targetPosition: targetSide,
+          )
+        : Path()
+      ..moveTo(start.dx, start.dy)
+      ..addPolygon(
+        [for (final point in edge.controlPoints) point, end],
+        false,
+      );
+    final metrics = path.computeMetrics().toList(growable: false);
+    final labelPosition = metrics.isEmpty || metrics.first.length == 0
+        ? start
+        : metrics.first
+                .getTangentForOffset(metrics.first.length / 2)
+                ?.position ??
+            start;
+    return FlowEdgePathResult(
+      path: path,
+      bounds: path.getBounds(),
+      labelPosition: labelPosition,
+      sourceAnchor: start,
+      targetAnchor: end,
+      sourceSide: sourceSide,
+      targetSide: targetSide,
+      metrics: metrics,
+    );
+  }
+
   static FlowHandlePosition _boundarySide(Rect rect, Offset point) {
     final delta = point - rect.center;
     final horizontalDistance = delta.dx.abs() / math.max(rect.width, 1);
@@ -361,6 +451,109 @@ abstract final class FlowGeometry {
     return distance;
   }
 
+  /// Tests a path against a rectangle using sampled segments after a bounds
+  /// broad phase. This also catches a long edge that crosses the box with both
+  /// endpoints outside it.
+  static bool pathIntersectsRect(Path path, Rect rect, {double step = 4}) {
+    if (!path.getBounds().overlaps(rect)) return false;
+    for (final metric in path.computeMetrics()) {
+      final count = (metric.length / math.max(step, 0.5)).ceil().clamp(1, 2048);
+      Offset? previous;
+      for (var index = 0; index <= count; index++) {
+        final point =
+            metric.getTangentForOffset(metric.length * index / count)?.position;
+        if (point == null) continue;
+        if (rect.contains(point) ||
+            (previous != null &&
+                _segmentIntersectsRect(previous, point, rect))) {
+          return true;
+        }
+        previous = point;
+      }
+    }
+    return false;
+  }
+
+  /// Finds the closest x/y alignment between [movingBounds] and target node
+  /// rectangles. Corrections are returned in graph coordinates.
+  static FlowAlignmentGuides findAlignmentGuides(
+    Rect movingBounds,
+    Iterable<Rect> targets, {
+    required double threshold,
+  }) {
+    double? bestX;
+    double? bestY;
+    double? vertical;
+    double? horizontal;
+    final movingX = [
+      movingBounds.left,
+      movingBounds.center.dx,
+      movingBounds.right
+    ];
+    final movingY = [
+      movingBounds.top,
+      movingBounds.center.dy,
+      movingBounds.bottom
+    ];
+    for (final target in targets) {
+      final targetX = [target.left, target.center.dx, target.right];
+      final targetY = [target.top, target.center.dy, target.bottom];
+      for (final from in movingX) {
+        for (final to in targetX) {
+          final delta = to - from;
+          if (delta.abs() <= threshold &&
+              (bestX == null || delta.abs() < bestX.abs())) {
+            bestX = delta;
+            vertical = to;
+          }
+        }
+      }
+      for (final from in movingY) {
+        for (final to in targetY) {
+          final delta = to - from;
+          if (delta.abs() <= threshold &&
+              (bestY == null || delta.abs() < bestY.abs())) {
+            bestY = delta;
+            horizontal = to;
+          }
+        }
+      }
+    }
+    return FlowAlignmentGuides(
+      correction: Offset(bestX ?? 0, bestY ?? 0),
+      vertical: vertical,
+      horizontal: horizontal,
+    );
+  }
+
+  static bool _segmentIntersectsRect(Offset a, Offset b, Rect rect) {
+    var t0 = 0.0;
+    var t1 = 1.0;
+    final dx = b.dx - a.dx;
+    final dy = b.dy - a.dy;
+    final p = [-dx, dx, -dy, dy];
+    final q = [
+      a.dx - rect.left,
+      rect.right - a.dx,
+      a.dy - rect.top,
+      rect.bottom - a.dy
+    ];
+    for (var index = 0; index < 4; index++) {
+      if (p[index] == 0) {
+        if (q[index] < 0) return false;
+        continue;
+      }
+      final ratio = q[index] / p[index];
+      if (p[index] < 0) {
+        t0 = math.max(t0, ratio);
+      } else {
+        t1 = math.min(t1, ratio);
+      }
+      if (t0 > t1) return false;
+    }
+    return true;
+  }
+
   static FlowNode<T>? closestInputNode<T>({
     required Iterable<FlowNode<T>> nodes,
     required String sourceId,
@@ -385,4 +578,39 @@ abstract final class FlowGeometry {
     }
     return closest;
   }
+}
+
+/// Cached-ready edge geometry consumed by the painter and interaction layer.
+class FlowEdgePathResult {
+  const FlowEdgePathResult({
+    required this.path,
+    required this.bounds,
+    required this.labelPosition,
+    required this.sourceAnchor,
+    required this.targetAnchor,
+    required this.sourceSide,
+    required this.targetSide,
+    required this.metrics,
+  });
+
+  final Path path;
+  final Rect bounds;
+  final Offset labelPosition;
+  final Offset sourceAnchor;
+  final Offset targetAnchor;
+  final FlowHandlePosition sourceSide;
+  final FlowHandlePosition targetSide;
+  final List<PathMetric> metrics;
+}
+
+class FlowAlignmentGuides {
+  const FlowAlignmentGuides({
+    required this.correction,
+    this.vertical,
+    this.horizontal,
+  });
+
+  final Offset correction;
+  final double? vertical;
+  final double? horizontal;
 }

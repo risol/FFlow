@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 class FlowPort extends StatelessWidget {
   const FlowPort({
     super.key,
     required this.isOutput,
     this.enabled = false,
+    this.dragStartBehavior = DragStartBehavior.down,
     this.onTap,
     this.onPanStart,
     this.onPanUpdate,
@@ -14,6 +16,7 @@ class FlowPort extends StatelessWidget {
 
   final bool isOutput;
   final bool enabled;
+  final DragStartBehavior dragStartBehavior;
   final VoidCallback? onTap;
   final GestureDragStartCallback? onPanStart;
   final GestureDragUpdateCallback? onPanUpdate;
@@ -44,6 +47,7 @@ class FlowPort extends StatelessWidget {
     if (!enabled) return IgnorePointer(child: port);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      dragStartBehavior: dragStartBehavior,
       onTap: onTap,
       onPanStart: onPanStart,
       onPanUpdate: onPanUpdate,

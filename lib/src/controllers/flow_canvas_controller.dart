@@ -10,10 +10,12 @@ import '../utils/flow_graph_utils.dart';
 /// Pass the controller to the canvas and dispose it with the owning widget.
 class FlowCanvasController extends TransformationController {
   Size? _viewportSize;
+  Offset _sceneOrigin = Offset.zero;
+  int _viewportAnimationRevision = 0;
 
   FlowViewport get viewport => FlowViewport(
-        x: value.entry(0, 3),
-        y: value.entry(1, 3),
+        x: value.entry(0, 3) - value.getMaxScaleOnAxis() * _sceneOrigin.dx,
+        y: value.entry(1, 3) - value.getMaxScaleOnAxis() * _sceneOrigin.dy,
         zoom: value.getMaxScaleOnAxis(),
       );
 
@@ -21,21 +23,72 @@ class FlowCanvasController extends TransformationController {
   /// visible center fixed when no focal point is supplied.
   void updateViewportSize(Size size) => _viewportSize = size;
 
+  /// Keeps graph-coordinate APIs independent from the internal padded scene.
+  void updateSceneOrigin(Offset origin) => _sceneOrigin = origin;
+
   /// Convert a point in canvas-local screen pixels to graph coordinates.
-  Offset screenToFlowPosition(Offset position) => toScene(position);
+  Offset screenToFlowPosition(Offset position) =>
+      toScene(position) + _sceneOrigin;
 
   /// Convert a point in graph coordinates to canvas-local screen pixels.
   Offset flowToScreenPosition(Offset position) =>
-      MatrixUtils.transformPoint(value, position);
+      MatrixUtils.transformPoint(value, position - _sceneOrigin);
 
   /// Set pan translation and zoom directly.
   void setViewport(FlowViewport viewport) {
+    _viewportAnimationRevision++;
+    _setViewportValue(viewport);
+  }
+
+  void _setViewportValue(FlowViewport viewport) {
     value = Matrix4.identity()
-      ..translateByDouble(viewport.x, viewport.y, 0, 1)
+      ..translateByDouble(viewport.x + viewport.zoom * _sceneOrigin.dx,
+          viewport.y + viewport.zoom * _sceneOrigin.dy, 0, 1)
       ..scaleByDouble(viewport.zoom, viewport.zoom, 1, 1);
   }
 
+  /// Animates to a graph-coordinate viewport. Returns false if a later
+  /// viewport command interrupts this animation.
+  Future<bool> animateToViewport(
+    FlowViewport target, {
+    required TickerProvider vsync,
+    Duration duration = const Duration(milliseconds: 250),
+    Curve curve = Curves.easeInOut,
+  }) async {
+    if (duration == Duration.zero) {
+      setViewport(target);
+      return true;
+    }
+    final revision = ++_viewportAnimationRevision;
+    final start = viewport;
+    final controller = AnimationController(vsync: vsync, duration: duration);
+    final animation = CurvedAnimation(parent: controller, curve: curve);
+    void update() {
+      if (revision != _viewportAnimationRevision) return;
+      final t = animation.value;
+      _setViewportValue(FlowViewport(
+        x: start.x + (target.x - start.x) * t,
+        y: start.y + (target.y - start.y) * t,
+        zoom: start.zoom + (target.zoom - start.zoom) * t,
+      ));
+    }
+
+    animation.addListener(update);
+    try {
+      await controller.forward().orCancel;
+    } on TickerCanceled {
+      return false;
+    } finally {
+      animation
+        ..removeListener(update)
+        ..dispose();
+      controller.dispose();
+    }
+    return revision == _viewportAnimationRevision;
+  }
+
   void panBy(Offset delta) {
+    _viewportAnimationRevision++;
     value = Matrix4.translationValues(delta.dx, delta.dy, 0) * value;
   }
 
@@ -66,6 +119,7 @@ class FlowCanvasController extends TransformationController {
     double minZoom = 0.25,
     double maxZoom = 2,
   }) {
+    _viewportAnimationRevision++;
     final current = value.getMaxScaleOnAxis();
     final next = zoom.clamp(minZoom, maxZoom).toDouble();
     final factor = next / current;
@@ -85,9 +139,10 @@ class FlowCanvasController extends TransformationController {
   }
 
   void centerAt(Offset scenePoint, Size viewportSize, {double? zoom}) {
+    _viewportAnimationRevision++;
     final scale = zoom ?? value.getMaxScaleOnAxis();
     final center = Offset(viewportSize.width / 2, viewportSize.height / 2);
-    final translation = center - scenePoint * scale;
+    final translation = center - (scenePoint - _sceneOrigin) * scale;
     value = Matrix4.identity()
       ..translateByDouble(translation.dx, translation.dy, 0, 1)
       ..scaleByDouble(scale, scale, 1, 1);
@@ -115,6 +170,7 @@ class FlowCanvasController extends TransformationController {
     double minZoom = 0.25,
     double maxZoom = 2,
   }) {
+    _viewportAnimationRevision++;
     if (bounds.isEmpty || viewportSize.isEmpty) return;
     setViewport(FlowGraphUtils.getViewportForBounds(
       bounds,

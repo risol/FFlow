@@ -1,3 +1,22 @@
+import 'package:flutter/animation.dart';
+
+/// Options shared by fit-to-view helpers and initial viewport fitting.
+class FlowFitViewOptions {
+  const FlowFitViewOptions({
+    this.padding = 80,
+    this.minZoom = 0.25,
+    this.maxZoom = 2,
+    this.duration = Duration.zero,
+    this.curve = Curves.easeInOut,
+  });
+
+  final double padding;
+  final double minZoom;
+  final double maxZoom;
+  final Duration duration;
+  final Curve curve;
+}
+
 /// The translation and zoom of a flow canvas.
 class FlowViewport {
   const FlowViewport({required this.x, required this.y, required this.zoom});

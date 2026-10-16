@@ -12,6 +12,8 @@ enum FlowSelectionMode { full, partial }
 
 enum FlowConnectionMode { strict, loose }
 
+enum FlowAutoPanInteraction { nodeDrag, connect, selection }
+
 enum FlowToolbarPlacement { top, right, bottom, left }
 
 /// Pointer coordinates reported by canvas, node, and edge callbacks.
@@ -44,14 +46,14 @@ typedef FlowEdgePointerCallback = void Function(
 class FlowConnectionStart {
   const FlowConnectionStart({
     required this.nodeId,
-    required this.handleId,
+    this.handleId,
     required this.handleType,
     this.edgeId,
     this.reconnecting = false,
   });
 
   final String nodeId;
-  final String handleId;
+  final String? handleId;
   final FlowHandleType handleType;
   final String? edgeId;
   final bool reconnecting;
@@ -69,6 +71,14 @@ class FlowConnectionEnd {
   final Offset point;
   final FlowConnection? connection;
   final bool cancelled;
+}
+
+/// Intent emitted when a connection gesture ends on blank canvas.
+class FlowConnectionDrop {
+  const FlowConnectionDrop({required this.start, required this.point});
+
+  final FlowConnectionStart start;
+  final Offset point;
 }
 
 typedef FlowConnectionLineBuilder = Widget Function(

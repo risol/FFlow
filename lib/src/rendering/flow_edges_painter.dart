@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 
+import '../geometry/flow_edge_geometry_cache.dart';
 import '../geometry/flow_geometry.dart';
 import '../models/flow_edge.dart';
 import '../models/flow_node.dart';
@@ -16,7 +18,10 @@ class FlowEdgesPainter<T> extends CustomPainter {
     required this.previewTarget,
     required this.previewColor,
     required this.animation,
-  }) : super(repaint: animation);
+    this.geometryCache,
+    this.sceneOffset = Offset.zero,
+    this.repaintOnAnimation = true,
+  }) : super(repaint: repaintOnAnimation ? animation : null);
 
   final List<FlowNode<T>> nodes;
   final List<FlowEdge> edges;
@@ -26,19 +31,27 @@ class FlowEdgesPainter<T> extends CustomPainter {
   final Offset? previewTarget;
   final Color previewColor;
   final Animation<double> animation;
+  final FlowEdgeGeometryCache? geometryCache;
+  final Offset sceneOffset;
+  final bool repaintOnAnimation;
+
+  late final Map<String, FlowNode<T>> _nodesById = {
+    for (final node in nodes) node.id: node,
+  };
 
   @override
   void paint(Canvas canvas, Size size) {
-    final byId = {for (final node in nodes) node.id: node};
+    canvas.save();
+    canvas.translate(sceneOffset.dx, sceneOffset.dy);
     for (final edge in edges) {
       if (edge.hidden) continue;
-      final start = FlowGeometry.edgeSource(edge, byId);
-      final end = FlowGeometry.edgeTarget(edge, byId);
-      if (start == null || end == null) continue;
-      _drawEdge(
+      final geometry = geometryCache?.result(edge, _nodesById) ??
+          FlowGeometry.edgePathResult(edge, _nodesById);
+      if (geometry == null) continue;
+      _drawPath(
         canvas,
-        start,
-        end,
+        geometry.path,
+        geometry.metrics,
         edge,
         color: selectedEdgeIds.contains(edge.id)
             ? const Color(0xFFB4A9FF)
@@ -51,38 +64,29 @@ class FlowEdgesPainter<T> extends CustomPainter {
     final source = previewStart;
     final target = previewTarget;
     if (source != null && target != null) {
-      _drawEdge(
-        canvas,
-        source,
-        target,
-        null,
-        color: previewColor,
-        strokeWidth: 2,
-      );
+      final bend = (target.dx - source.dx).abs() * 0.48;
+      final control = bend.clamp(48.0, 190.0).toDouble();
+      final preview = Path()
+        ..moveTo(source.dx, source.dy)
+        ..cubicTo(source.dx + control, source.dy, target.dx - control,
+            target.dy, target.dx, target.dy);
+      _drawPath(canvas, preview,
+          preview.computeMetrics().toList(growable: false), null,
+          color: previewColor, strokeWidth: 2);
     }
+    canvas.restore();
   }
 
-  void _drawEdge(
+  void _drawPath(
     Canvas canvas,
-    Offset start,
-    Offset end,
+    Path path,
+    List<PathMetric> resolvedMetrics,
     FlowEdge? edge, {
     required Color color,
     required double strokeWidth,
   }) {
-    final path = edge == null
-        ? Path()
-        : FlowGeometry.edgePathFor(
-            edge, {for (final node in nodes) node.id: node});
-    if (edge == null) {
-      final bend = (end.dx - start.dx).abs() * 0.48;
-      final control = bend.clamp(48.0, 190.0).toDouble();
-      path
-        ..moveTo(start.dx, start.dy)
-        ..cubicTo(start.dx + control, start.dy, end.dx - control, end.dy,
-            end.dx, end.dy);
-    }
-
+    final metrics = resolvedMetrics;
+    if (metrics.isEmpty) return;
     canvas.drawPath(
       path,
       Paint()
@@ -101,15 +105,15 @@ class FlowEdgesPainter<T> extends CustomPainter {
     );
 
     if (edge?.animated ?? false) {
-      _drawAnimatedDashes(canvas, path, color, strokeWidth, animation.value);
+      _drawAnimatedDashes(canvas, metrics, color, strokeWidth, animation.value);
     }
     if (edge?.markerStart != null) {
-      _drawMarker(canvas, path, edge?.markerColor ?? color,
+      _drawMarker(canvas, metrics, edge?.markerColor ?? color,
           atStart: true,
           closed: edge!.markerStart == FlowEdgeMarker.arrowClosed);
     }
     if (edge?.markerEnd != null) {
-      _drawMarker(canvas, path, edge?.markerColor ?? color,
+      _drawMarker(canvas, metrics, edge?.markerColor ?? color,
           atStart: false,
           closed: edge!.markerEnd == FlowEdgeMarker.arrowClosed);
     }
@@ -117,7 +121,7 @@ class FlowEdgesPainter<T> extends CustomPainter {
 
   void _drawAnimatedDashes(
     Canvas canvas,
-    Path path,
+    List<PathMetric> metrics,
     Color color,
     double strokeWidth,
     double progress,
@@ -127,7 +131,7 @@ class FlowEdgesPainter<T> extends CustomPainter {
     final cycleLength = dashLength + gapLength;
     final phase = progress * cycleLength;
     final dashPath = Path();
-    for (final metric in path.computeMetrics()) {
+    for (final metric in metrics) {
       for (var start = -phase; start < metric.length; start += cycleLength) {
         final from = start.clamp(0.0, metric.length).toDouble();
         final to = (start + dashLength).clamp(0.0, metric.length).toDouble();
@@ -146,10 +150,14 @@ class FlowEdgesPainter<T> extends CustomPainter {
     );
   }
 
-  void _drawMarker(Canvas canvas, Path path, Color color,
-      {required bool atStart, required bool closed}) {
-    final metrics = path.computeMetrics().toList(growable: false);
-    if (metrics.isEmpty || metrics.first.length == 0) return;
+  void _drawMarker(
+    Canvas canvas,
+    List<PathMetric> metrics,
+    Color color, {
+    required bool atStart,
+    required bool closed,
+  }) {
+    if (metrics.first.length == 0) return;
     final metric = metrics.first;
     final tangent = metric.getTangentForOffset(atStart ? 0 : metric.length);
     if (tangent == null) return;
@@ -186,5 +194,8 @@ class FlowEdgesPainter<T> extends CustomPainter {
       oldDelegate.previewStart != previewStart ||
       oldDelegate.previewTarget != previewTarget ||
       oldDelegate.previewColor != previewColor ||
-      oldDelegate.animation != animation;
+      oldDelegate.geometryCache != geometryCache ||
+      oldDelegate.sceneOffset != sceneOffset ||
+      oldDelegate.repaintOnAnimation != repaintOnAnimation ||
+      (repaintOnAnimation && oldDelegate.animation != animation);
 }

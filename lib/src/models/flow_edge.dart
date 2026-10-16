@@ -9,6 +9,8 @@ enum FlowEdgeMarker { arrow, arrowClosed }
 /// Which side of an edge may be moved during reconnection.
 enum FlowReconnectable { none, source, target, both }
 
+const Object _flowEdgeUnset = Object();
+
 /// A directed connection between two nodes on an [FFlowCanvas].
 class FlowEdge {
   const FlowEdge({
@@ -44,6 +46,7 @@ class FlowEdge {
     this.focusable = true,
     this.floating = false,
     this.zIndex = 0,
+    this.controlPoints = const [],
   });
 
   final String id;
@@ -98,6 +101,10 @@ class FlowEdge {
   /// Paint order. Higher values paint on top of lower-valued edges.
   final int zIndex;
 
+  /// Optional editable routing points in graph coordinates. When non-empty,
+  /// the edge path passes through each point in order.
+  final List<Offset> controlPoints;
+
   bool get canReconnectSource =>
       reconnectable &&
       reconnectableSource &&
@@ -112,62 +119,89 @@ class FlowEdge {
           reconnectableEnds == FlowReconnectable.both);
 
   FlowEdge copyWith({
+    String? id,
     String? sourceId,
     String? targetId,
-    String? sourceHandleId,
-    String? targetHandleId,
+    Object? sourceHandleId = _flowEdgeUnset,
+    Object? targetHandleId = _flowEdgeUnset,
     FlowHandleType? targetHandleType,
     FlowEdgeType? type,
-    String? customType,
-    String? label,
-    Color? color,
+    Object? customType = _flowEdgeUnset,
+    Object? label = _flowEdgeUnset,
+    Object? color = _flowEdgeUnset,
     double? strokeWidth,
+    Object? markerStart = _flowEdgeUnset,
+    Object? markerEnd = _flowEdgeUnset,
+    bool? selectable,
+    bool? deletable,
     bool? selected,
     bool? reconnectable,
+    bool? hidden,
+    bool? animated,
+    double? interactionWidth,
+    Object? data = _flowEdgeUnset,
     bool? reconnectableSource,
     bool? reconnectableTarget,
-    FlowReconnectable? reconnectableEnds,
+    Object? reconnectableEnds = _flowEdgeUnset,
     double? curvature,
     double? stepPosition,
     double? cornerRadius,
-    Color? markerColor,
-    String? ariaLabel,
+    Object? markerColor = _flowEdgeUnset,
+    Object? ariaLabel = _flowEdgeUnset,
     bool? focusable,
     bool? floating,
     int? zIndex,
+    List<Offset>? controlPoints,
   }) =>
       FlowEdge(
-        id: id,
+        id: id ?? this.id,
         sourceId: sourceId ?? this.sourceId,
         targetId: targetId ?? this.targetId,
-        sourceHandleId: sourceHandleId ?? this.sourceHandleId,
-        targetHandleId: targetHandleId ?? this.targetHandleId,
+        sourceHandleId: identical(sourceHandleId, _flowEdgeUnset)
+            ? this.sourceHandleId
+            : sourceHandleId as String?,
+        targetHandleId: identical(targetHandleId, _flowEdgeUnset)
+            ? this.targetHandleId
+            : targetHandleId as String?,
         targetHandleType: targetHandleType ?? this.targetHandleType,
         type: type ?? this.type,
-        customType: customType ?? this.customType,
-        label: label ?? this.label,
-        color: color ?? this.color,
+        customType: identical(customType, _flowEdgeUnset)
+            ? this.customType
+            : customType as String?,
+        label: identical(label, _flowEdgeUnset) ? this.label : label as String?,
+        color: identical(color, _flowEdgeUnset) ? this.color : color as Color?,
         strokeWidth: strokeWidth ?? this.strokeWidth,
-        markerStart: markerStart,
-        markerEnd: markerEnd,
-        selectable: selectable,
-        deletable: deletable,
+        markerStart: identical(markerStart, _flowEdgeUnset)
+            ? this.markerStart
+            : markerStart as FlowEdgeMarker?,
+        markerEnd: identical(markerEnd, _flowEdgeUnset)
+            ? this.markerEnd
+            : markerEnd as FlowEdgeMarker?,
+        selectable: selectable ?? this.selectable,
+        deletable: deletable ?? this.deletable,
         reconnectable: reconnectable ?? this.reconnectable,
-        hidden: hidden,
+        hidden: hidden ?? this.hidden,
         selected: selected ?? this.selected,
-        animated: animated,
-        interactionWidth: interactionWidth,
-        data: data,
+        animated: animated ?? this.animated,
+        interactionWidth: interactionWidth ?? this.interactionWidth,
+        data: identical(data, _flowEdgeUnset) ? this.data : data,
         reconnectableSource: reconnectableSource ?? this.reconnectableSource,
         reconnectableTarget: reconnectableTarget ?? this.reconnectableTarget,
-        reconnectableEnds: reconnectableEnds ?? this.reconnectableEnds,
+        reconnectableEnds: identical(reconnectableEnds, _flowEdgeUnset)
+            ? this.reconnectableEnds
+            : reconnectableEnds as FlowReconnectable?,
         curvature: curvature ?? this.curvature,
         stepPosition: stepPosition ?? this.stepPosition,
         cornerRadius: cornerRadius ?? this.cornerRadius,
-        markerColor: markerColor ?? this.markerColor,
-        ariaLabel: ariaLabel ?? this.ariaLabel,
+        markerColor: identical(markerColor, _flowEdgeUnset)
+            ? this.markerColor
+            : markerColor as Color?,
+        ariaLabel: identical(ariaLabel, _flowEdgeUnset)
+            ? this.ariaLabel
+            : ariaLabel as String?,
         focusable: focusable ?? this.focusable,
         floating: floating ?? this.floating,
         zIndex: zIndex ?? this.zIndex,
+        controlPoints: controlPoints ?? this.controlPoints,
       );
 }

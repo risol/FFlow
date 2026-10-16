@@ -26,7 +26,7 @@ abstract final class FlowGraphInteraction {
     required List<FlowNode<T>> nodes,
     required List<FlowEdge> edges,
     required String sourceId,
-    required String sourceHandleId,
+    required String? sourceHandleId,
     required Offset point,
     bool Function(FlowConnection connection)? isValidConnection,
     double snapRadius = 38,
@@ -55,7 +55,7 @@ abstract final class FlowGraphInteraction {
         !sourceHandle.connectable ||
         !sourceHandle.connectableStart ||
         _connectionCount(
-                nodes, edges, sourceId, sourceHandleId, FlowHandleType.source,
+                nodes, edges, sourceId, sourceHandle.id, FlowHandleType.source,
                 excludedEdgeId: excludedEdgeId) >=
             (sourceHandle.maxConnections ?? 1 << 30)) {
       return null;
@@ -89,7 +89,7 @@ abstract final class FlowGraphInteraction {
         if (candidateDistance >= closestDistance) continue;
         final candidate = FlowConnection(
           sourceId: sourceId,
-          sourceHandleId: sourceHandleId,
+          sourceHandleId: sourceHandle.id,
           targetId: node.id,
           targetHandleId: handle.id,
           targetHandleType: handle.type,
@@ -116,7 +116,7 @@ abstract final class FlowGraphInteraction {
     required List<FlowNode<T>> nodes,
     required List<FlowEdge> edges,
     required String targetId,
-    required String targetHandleId,
+    required String? targetHandleId,
     required Offset point,
     bool Function(FlowConnection connection)? isValidConnection,
     double snapRadius = 38,
@@ -138,7 +138,7 @@ abstract final class FlowGraphInteraction {
         !targetHandle.connectable ||
         !targetHandle.connectableEnd ||
         _connectionCount(
-                nodes, edges, targetId, targetHandleId, targetHandleType,
+                nodes, edges, targetId, targetHandle.id, targetHandleType,
                 excludedEdgeId: excludedEdgeId) >=
             (targetHandle.maxConnections ?? 1 << 30)) {
       return null;
@@ -172,7 +172,7 @@ abstract final class FlowGraphInteraction {
           sourceId: node.id,
           sourceHandleId: handle.id,
           targetId: targetId,
-          targetHandleId: targetHandleId,
+          targetHandleId: targetHandle.id,
           targetHandleType: targetHandleType,
         );
         if (isValidConnection != null && !isValidConnection(candidate)) {

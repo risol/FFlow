@@ -3,6 +3,18 @@ part of 'flow_canvas.dart';
 extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
   void _startConnection(
       FlowNode<T> node, FlowHandle handle, DragStartDetails details) {
+    final pointerId =
+        _pointerForGesture(_connectionGestureKey(node.id, handle.id));
+    if (pointerId == null ||
+        !_claimCapturedInteraction(
+          FlowInteractionKind.connecting,
+          pointerId,
+          targetKind: FlowHitTargetKind.connectionHandle,
+          nodeId: node.id,
+          handleId: handle.id,
+        )) {
+      return;
+    }
     _connectingNodeId = node.id;
     _connectingHandleId = handle.id;
     _connectingHandleType = handle.type;
@@ -11,7 +23,12 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       handleId: handle.id,
       handleType: handle.type,
     );
-    widget.onConnectStart?.call(_connectionGestureStart!);
+    _connectionStartGlobal = details.globalPosition;
+    _connectionPointerId = pointerId;
+    _connectionThresholdMet = widget.connectionDragThreshold <= 0;
+    if (_connectionThresholdMet) {
+      widget.onConnectStart?.call(_connectionGestureStart!);
+    }
     final renderObject = context.findRenderObject();
     final local = renderObject is RenderBox
         ? renderObject.globalToLocal(details.globalPosition)
@@ -21,17 +38,41 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       handle,
       nodes: {for (final item in _nodes) item.id: item},
     );
-    _connectionPoint = _transformController.toScene(local);
+    _connectionPoint = _screenToFlow(local);
     _rebuild(() {});
   }
 
-  void _updateConnection(DragUpdateDetails details) {
+  void _updateConnection(DragUpdateDetails details, {Object? gestureKey}) {
+    if (gestureKey != null &&
+        !_ownsGesturePointer(gestureKey, _connectionPointerId)) {
+      return;
+    }
     if (_connectingNodeId == null && _reconnectingEdgeId == null) return;
-    _autoPanForGesture(details.globalPosition);
+    if (!_connectionThresholdMet) {
+      final start = _connectionStartGlobal;
+      if (start == null ||
+          (details.globalPosition - start).distance <
+              widget.connectionDragThreshold) {
+        return;
+      }
+      _connectionThresholdMet = true;
+      final gesture = _connectionGestureStart;
+      if (gesture != null) {
+        if (gesture.reconnecting) {
+          widget.onReconnectStart?.call(gesture);
+        } else {
+          widget.onConnectStart?.call(gesture);
+        }
+      }
+    }
+    _autoPanForGesture(
+      details.globalPosition,
+      interaction: FlowAutoPanInteraction.connect,
+    );
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox) return;
     final local = renderObject.globalToLocal(details.globalPosition);
-    final point = _transformController.toScene(local);
+    final point = _screenToFlow(local);
     _rebuild(() {
       if (_reconnectingEdgeId != null && _reconnectingSource) {
         _connectionStart = point;
@@ -41,7 +82,29 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
     });
   }
 
-  void _endConnection(DragEndDetails details) {
+  void _endConnection(DragEndDetails details, {Object? gestureKey}) {
+    if (gestureKey != null &&
+        !_ownsGesturePointer(gestureKey, _connectionPointerId)) {
+      return;
+    }
+    _stopAutoPan();
+    if (!_connectionThresholdMet) {
+      _rebuild(() {
+        _reconnectingEdgeId = null;
+        _connectingNodeId = null;
+        _connectingHandleId = null;
+        _connectingHandleType = null;
+        _connectionStart = null;
+        _connectionPoint = null;
+        _connectionGestureStart = null;
+        _connectionStartGlobal = null;
+        _connectionThresholdMet = false;
+      });
+      final pointerId = _connectionPointerId;
+      _connectionPointerId = null;
+      if (pointerId != null) _finishInteraction(pointerId);
+      return;
+    }
     final dropPoint = _scenePointFromGlobal(details.globalPosition);
     final reconnectEdgeId = _reconnectingEdgeId;
     if (reconnectEdgeId != null) {
@@ -71,7 +134,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
                 nodes: _nodes,
                 edges: _edges,
                 targetId: edge.targetId,
-                targetHandleId: targetHandle?.id ?? '',
+                targetHandleId: targetHandle?.id,
                 point: point,
                 excludedEdgeId: edge.id,
                 isValidConnection: widget.isValidConnection,
@@ -83,7 +146,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
                 nodes: _nodes,
                 edges: _edges,
                 sourceId: edge.sourceId,
-                sourceHandleId: sourceHandle?.id ?? '',
+                sourceHandleId: sourceHandle?.id,
                 point: point,
                 excludedEdgeId: edge.id,
                 isValidConnection: widget.isValidConnection,
@@ -110,6 +173,12 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
           connection: completedConnection,
           cancelled: completedConnection == null,
         ));
+        if (completedConnection == null &&
+            point != null &&
+            _nodeAt(point) == null) {
+          widget.onConnectionDrop
+              ?.call(FlowConnectionDrop(start: gesture, point: point));
+        }
       }
       _rebuild(() {
         _reconnectingEdgeId = null;
@@ -119,7 +188,12 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
         _connectionStart = null;
         _connectionPoint = null;
         _connectionGestureStart = null;
+        _connectionStartGlobal = null;
+        _connectionThresholdMet = false;
       });
+      final pointerId = _connectionPointerId;
+      _connectionPointerId = null;
+      if (pointerId != null) _finishInteraction(pointerId);
       return;
     }
 
@@ -160,6 +234,12 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
         connection: completedConnection,
         cancelled: completedConnection == null,
       ));
+      if (completedConnection == null &&
+          point != null &&
+          _nodeAt(point) == null) {
+        widget.onConnectionDrop
+            ?.call(FlowConnectionDrop(start: gesture, point: point));
+      }
     }
     _rebuild(() {
       _connectingNodeId = null;
@@ -168,13 +248,30 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       _connectionStart = null;
       _connectionPoint = null;
       _connectionGestureStart = null;
+      _connectionStartGlobal = null;
+      _connectionThresholdMet = false;
     });
+    final pointerId = _connectionPointerId;
+    _connectionPointerId = null;
+    if (pointerId != null) _finishInteraction(pointerId);
   }
 
-  void _cancelConnection() {
+  void _completeConnection(Offset? globalPosition) {
+    _endConnection(DragEndDetails(
+      globalPosition: globalPosition ?? Offset.zero,
+      velocity: Velocity.zero,
+    ));
+  }
+
+  void _cancelConnection([Object? gestureKey]) {
+    if (gestureKey != null &&
+        !_ownsGesturePointer(gestureKey, _connectionPointerId)) {
+      return;
+    }
+    _stopAutoPan();
     final gesture = _connectionGestureStart;
     final point = _connectionPoint ?? _connectionStart ?? Offset.zero;
-    if (gesture != null) {
+    if (gesture != null && _connectionThresholdMet) {
       final event = FlowConnectionEnd(
         start: gesture,
         point: point,
@@ -192,9 +289,14 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
       _connectingHandleId = null;
       _connectingHandleType = null;
       _connectionGestureStart = null;
+      _connectionStartGlobal = null;
+      _connectionThresholdMet = false;
       _connectionStart = null;
       _connectionPoint = null;
     });
+    final pointerId = _connectionPointerId;
+    _connectionPointerId = null;
+    if (pointerId != null) _finishInteraction(pointerId);
   }
 
   double get _sceneSnapRadius =>
@@ -203,12 +305,24 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
   Offset? _scenePointFromGlobal(Offset globalPosition) {
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox) return null;
-    return _transformController
-        .toScene(renderObject.globalToLocal(globalPosition));
+    return _screenToFlow(renderObject.globalToLocal(globalPosition));
   }
 
   void _startReconnect(
       FlowEdge edge, bool sourceSide, DragStartDetails details) {
+    final pointerId = _pointerForGesture(
+      _reconnectGestureKey(edge.id, sourceSide),
+    );
+    if (pointerId == null ||
+        !_claimCapturedInteraction(
+          FlowInteractionKind.reconnecting,
+          pointerId,
+          targetKind: FlowHitTargetKind.reconnectHandle,
+          edgeId: edge.id,
+          sourceSide: sourceSide,
+        )) {
+      return;
+    }
     final nodeMap = {for (final node in _nodes) node.id: node};
     final source = FlowGeometry.edgeSource(edge, nodeMap);
     final target = FlowGeometry.edgeTarget(edge, nodeMap);
@@ -219,12 +333,17 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
     final handleId = sourceSide ? edge.sourceHandleId : edge.targetHandleId;
     _connectionGestureStart = FlowConnectionStart(
       nodeId: nodeId,
-      handleId: handleId ?? '',
+      handleId: handleId,
       handleType: sourceSide ? FlowHandleType.source : edge.targetHandleType,
       edgeId: edge.id,
       reconnecting: true,
     );
-    widget.onReconnectStart?.call(_connectionGestureStart!);
+    _connectionStartGlobal = details.globalPosition;
+    _connectionPointerId = pointerId;
+    _connectionThresholdMet = widget.connectionDragThreshold <= 0;
+    if (_connectionThresholdMet) {
+      widget.onReconnectStart?.call(_connectionGestureStart!);
+    }
     _connectionStart = source;
     _connectionPoint = target;
     _rebuild(() {});
@@ -232,18 +351,33 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
 
   Widget _buildReconnectHandle(FlowEdge edge, bool sourceSide, Offset point) =>
       Positioned(
-        left: point.dx - 11,
-        top: point.dy - 11,
+        left: point.dx + _sceneOffset.dx - 11,
+        top: point.dy + _sceneOffset.dy - 11,
         width: 22,
         height: 22,
-        child: FlowPort(
-          isOutput:
-              sourceSide || edge.targetHandleType == FlowHandleType.source,
-          enabled: true,
-          onPanStart: (details) => _startReconnect(edge, sourceSide, details),
-          onPanUpdate: _updateConnection,
-          onPanEnd: _endConnection,
-          onPanCancel: _cancelConnection,
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) => _trackGesturePointer(
+            _reconnectGestureKey(edge.id, sourceSide),
+            event.pointer,
+          ),
+          child: FlowPort(
+            isOutput:
+                sourceSide || edge.targetHandleType == FlowHandleType.source,
+            enabled: true,
+            onPanStart: (details) => _startReconnect(edge, sourceSide, details),
+            onPanUpdate: (details) => _updateConnection(
+              details,
+              gestureKey: _reconnectGestureKey(edge.id, sourceSide),
+            ),
+            onPanEnd: (details) => _endConnection(
+              details,
+              gestureKey: _reconnectGestureKey(edge.id, sourceSide),
+            ),
+            onPanCancel: () => _cancelConnection(
+              _reconnectGestureKey(edge.id, sourceSide),
+            ),
+          ),
         ),
       );
 }

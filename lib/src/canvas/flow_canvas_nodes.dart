@@ -1,5 +1,7 @@
 part of 'flow_canvas.dart';
 
+const double _nodeInteractivePadding = 12;
+
 extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
   int _nodeDepth(FlowNode<T> node, Map<String, FlowNode<T>> nodesById) {
     var depth = 0;
@@ -61,76 +63,94 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
   Widget _buildNode(
       FlowNode<T> node, Map<String, FlowNode<T>> nodesById, int order) {
     final selected = _selectedNodes.contains(node.id);
-    final position = FlowGeometry.absolutePosition(node, nodesById);
+    final position = FlowGeometry.nodeAbsoluteTopLeft(node, nodesById);
     final focusNode = _nodeFocusNode(node.id);
-    final content = MouseRegion(
-      onEnter: (event) => widget.onNodeMouseEnter?.call(
-        node,
-        _pointerPosition(event.position, event.kind),
-      ),
-      onHover: (event) => widget.onNodeMouseMove?.call(
-        node,
-        _pointerPosition(event.position, event.kind),
-      ),
-      onExit: (event) => widget.onNodeMouseLeave?.call(
-        node,
-        _pointerPosition(event.position, event.kind),
-      ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (_pointerDownNodeId == node.id &&
-              !_nodeWasSelectedOnPointerDown &&
-              _selectedNodes.contains(node.id)) {
-            widget.onNodeClick?.call(node.id);
-            _pointerDownNodeId = null;
-            return;
-          }
-          _selectNode(node.id, toggle: _multiSelectPressed);
-          widget.onNodeClick?.call(node.id);
-          _pointerDownNodeId = null;
-        },
-        onDoubleTap: () => widget.onNodeDoubleClick?.call(node),
-        // Keep drags that start on a node from falling through to
-        // InteractiveViewer and panning the canvas. For dragHandleOnly nodes,
-        // the nested FFlowNodeDragHandle recognizer still starts node drags.
-        onPanStart: node.draggable && !node.dragHandleOnly
-            ? (details) => _startNodeDrag(node, details)
-            : (_) {},
-        onPanUpdate:
-            node.draggable && !node.dragHandleOnly ? _updateNodeDrag : null,
-        onPanEnd: node.draggable && !node.dragHandleOnly ? _endNodeDrag : null,
-        onPanCancel:
-            node.draggable && !node.dragHandleOnly ? _cancelNodeDrag : null,
-        child: _FlowNodeDragScope(
-          onPanStart: node.draggable
+    final content = Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) =>
+          _trackGesturePointer(_nodeGestureKey(node.id), event.pointer),
+      child: MouseRegion(
+        onEnter: (event) => widget.onNodeMouseEnter?.call(
+          node,
+          _pointerPosition(event.position, event.kind),
+        ),
+        onHover: (event) => widget.onNodeMouseMove?.call(
+          node,
+          _pointerPosition(event.position, event.kind),
+        ),
+        onExit: (event) => widget.onNodeMouseLeave?.call(
+          node,
+          _pointerPosition(event.position, event.kind),
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
+          onTap: () => _handleNodeTap(node),
+          // Keep drags that start on a node from falling through to
+          // InteractiveViewer and panning the canvas. For dragHandleOnly nodes,
+          // the nested FFlowNodeDragHandle recognizer still starts node drags.
+          onPanStart: node.draggable && !node.dragHandleOnly && !_pointerNoDrag
               ? (details) => _startNodeDrag(node, details)
+              : (_) {},
+          onPanUpdate: node.draggable && !node.dragHandleOnly && !_pointerNoDrag
+              ? (details) => _updateNodeDrag(details, node.id)
               : null,
-          onPanUpdate: node.draggable ? _updateNodeDrag : null,
-          onPanEnd: node.draggable ? _endNodeDrag : null,
-          onPanCancel: node.draggable ? _cancelNodeDrag : null,
-          child: widget.nodeBuilder(context, node, selected),
+          onPanEnd: node.draggable && !node.dragHandleOnly && !_pointerNoDrag
+              ? (details) => _endNodeDrag(details, node.id)
+              : null,
+          onPanCancel: node.draggable && !node.dragHandleOnly && !_pointerNoDrag
+              ? () => _cancelNodeDrag(_nodeGestureKey(node.id))
+              : null,
+          child: _FlowNodeDragScope(
+            onPanStart: node.draggable && !_pointerNoDrag
+                ? (details) => _startNodeDrag(node, details)
+                : null,
+            onPanUpdate: node.draggable && !_pointerNoDrag
+                ? (details) => _updateNodeDrag(details, node.id)
+                : null,
+            onPanEnd: node.draggable && !_pointerNoDrag
+                ? (details) => _endNodeDrag(details, node.id)
+                : null,
+            onPanCancel: node.draggable && !_pointerNoDrag
+                ? () => _cancelNodeDrag(_nodeGestureKey(node.id))
+                : null,
+            child: widget.nodeBuilder(context, node, selected),
+          ),
         ),
       ),
     );
     final nodeStack = Stack(
       clipBehavior: Clip.none,
       children: [
-        if (node.autoMeasure) content else Positioned.fill(child: content),
+        if (node.autoMeasure)
+          Padding(
+            padding: const EdgeInsets.all(_nodeInteractivePadding),
+            child: content,
+          )
+        else
+          Positioned(
+            left: _nodeInteractivePadding,
+            top: _nodeInteractivePadding,
+            width: node.width,
+            height: node.height,
+            child: content,
+          ),
         for (final handle in node.resolvedHandles)
-          _buildHandle(node, handle, nodesById, position),
+          _buildHandle(node, handle, nodesById, position,
+              padding: _nodeInteractivePadding),
         if (selected && node.resizable)
           for (final direction in _FlowResizeDirection.values)
-            _buildNodeResizeHandle(node, direction),
+            _buildNodeResizeHandle(node, direction,
+                padding: _nodeInteractivePadding),
       ],
     );
     final sizedStack = node.autoMeasure
         ? ConstrainedBox(
             constraints: BoxConstraints(
-              minWidth: node.minWidth,
-              maxWidth: node.maxWidth,
-              minHeight: node.minHeight,
-              maxHeight: node.maxHeight,
+              minWidth: node.minWidth + _nodeInteractivePadding * 2,
+              maxWidth: node.maxWidth + _nodeInteractivePadding * 2,
+              minHeight: node.minHeight + _nodeInteractivePadding * 2,
+              maxHeight: node.maxHeight + _nodeInteractivePadding * 2,
             ),
             child: nodeStack,
           )
@@ -165,13 +185,20 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
       ),
     );
     return Positioned(
-      left: position.dx,
-      top: position.dy,
-      width: node.autoMeasure ? null : node.width,
-      height: node.autoMeasure ? null : node.height,
+      left: position.dx + _sceneOffset.dx - _nodeInteractivePadding,
+      top: position.dy + _sceneOffset.dy - _nodeInteractivePadding,
+      width: node.autoMeasure ? null : node.width + _nodeInteractivePadding * 2,
+      height:
+          node.autoMeasure ? null : node.height + _nodeInteractivePadding * 2,
       child: node.autoMeasure
           ? _FlowMeasureSize(
-              onChange: (size) => _handleNodeMeasured(node.id, size),
+              onChange: (size) => _handleNodeMeasured(
+                node.id,
+                Size(
+                  size.width - _nodeInteractivePadding * 2,
+                  size.height - _nodeInteractivePadding * 2,
+                ),
+              ),
               child: semantics,
             )
           : semantics,
@@ -199,38 +226,49 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
 
   Widget _buildNodeResizeHandle(
     FlowNode<T> node,
-    _FlowResizeDirection direction,
-  ) {
+    _FlowResizeDirection direction, {
+    required double padding,
+  }) {
     const cornerSize = 12.0;
     const sideSize = 18.0;
     final width = direction.x == 0 ? sideSize : cornerSize;
     final height = direction.y == 0 ? sideSize : cornerSize;
     return Positioned(
       left: direction.x < 0
-          ? -cornerSize / 2
+          ? padding - cornerSize / 2
           : direction.x == 0
-              ? node.width / 2 - width / 2
+              ? padding + node.width / 2 - width / 2
               : null,
-      right: direction.x > 0 ? -cornerSize / 2 : null,
+      right: direction.x > 0 ? padding - cornerSize / 2 : null,
       top: direction.y < 0
-          ? -cornerSize / 2
+          ? padding - cornerSize / 2
           : direction.y == 0
-              ? node.height / 2 - height / 2
+              ? padding + node.height / 2 - height / 2
               : null,
-      bottom: direction.y > 0 ? -cornerSize / 2 : null,
+      bottom: direction.y > 0 ? padding - cornerSize / 2 : null,
       width: width,
       height: height,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanStart: (details) => _startNodeResize(node, direction, details),
-        onPanUpdate: _updateNodeResize,
-        onPanEnd: _endNodeResize,
-        onPanCancel: _cancelNodeResize,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: widget.connectionColor,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.white, width: 1.5),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) => _trackGesturePointer(
+          _resizeGestureKey(node.id, direction),
+          event.pointer,
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
+          onPanStart: (details) => _startNodeResize(node, direction, details),
+          onPanUpdate: (details) =>
+              _updateNodeResize(details, node.id, direction),
+          onPanEnd: (details) => _endNodeResize(details, node.id, direction),
+          onPanCancel: () =>
+              _cancelNodeResize(_resizeGestureKey(node.id, direction)),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.connectionColor,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white, width: 1.5),
+            ),
           ),
         ),
       ),
@@ -288,6 +326,8 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
         handleId: handle.id,
         handleType: handle.type,
       );
+      _connectionThresholdMet = true;
+      _connectionStartGlobal = null;
       widget.onConnectStart?.call(_connectionGestureStart!);
       final anchor = FlowGeometry.handleAnchor(
         node,
@@ -316,6 +356,8 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
         _connectionStart = null;
         _connectionPoint = null;
         _connectionGestureStart = null;
+        _connectionStartGlobal = null;
+        _connectionThresholdMet = false;
         _handleHandleTap(node, handle);
       }
       return;
@@ -364,6 +406,8 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
       _connectionStart = null;
       _connectionPoint = null;
       _connectionGestureStart = null;
+      _connectionStartGlobal = null;
+      _connectionThresholdMet = false;
     });
   }
 
@@ -371,27 +415,50 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
     FlowNode<T> node,
     FlowHandle handle,
     Map<String, FlowNode<T>> nodesById,
-    Offset nodePosition,
-  ) {
+    Offset nodePosition, {
+    required double padding,
+  }) {
     final anchor = FlowGeometry.handleAnchor(node, handle, nodes: nodesById);
     final canStart = _canStartConnection(node, handle);
     final canFinish = _canCompleteConnection(node, handle);
     return Positioned(
-      left: anchor.dx - nodePosition.dx - 11,
-      top: anchor.dy - nodePosition.dy - 11,
+      left: anchor.dx - nodePosition.dx - 11 + padding,
+      top: anchor.dy - nodePosition.dy - 11 + padding,
       width: 22,
       height: 22,
-      child: FlowPort(
-        isOutput: handle.type == FlowHandleType.source,
-        enabled: canStart || canFinish,
-        onTap:
-            widget.connectOnClick ? () => _handleHandleTap(node, handle) : null,
-        onPanStart: canStart
-            ? (details) => _startConnection(node, handle, details)
-            : null,
-        onPanUpdate: canStart ? _updateConnection : null,
-        onPanEnd: canStart ? _endConnection : null,
-        onPanCancel: canStart ? _cancelConnection : null,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) => _trackGesturePointer(
+          _connectionGestureKey(node.id, handle.id),
+          event.pointer,
+        ),
+        child: FlowPort(
+          isOutput: handle.type == FlowHandleType.source,
+          enabled: canStart || canFinish,
+          onTap: widget.connectOnClick
+              ? () => _handleHandleTap(node, handle)
+              : null,
+          onPanStart: canStart
+              ? (details) => _startConnection(node, handle, details)
+              : null,
+          onPanUpdate: canStart
+              ? (details) => _updateConnection(
+                    details,
+                    gestureKey: _connectionGestureKey(node.id, handle.id),
+                  )
+              : null,
+          onPanEnd: canStart
+              ? (details) => _endConnection(
+                    details,
+                    gestureKey: _connectionGestureKey(node.id, handle.id),
+                  )
+              : null,
+          onPanCancel: canStart
+              ? () => _cancelConnection(
+                    _connectionGestureKey(node.id, handle.id),
+                  )
+              : null,
+        ),
       ),
     );
   }

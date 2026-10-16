@@ -2,7 +2,7 @@
 
 FFlow is a reusable Flutter SDK for building interactive node and edge editors. The root package contains the public API and canvas implementation. The runnable workflow editor is an example app under [`example/`](example/).
 
-![FFlow workflow editor example](docs/images/fflow-workflow-editor.png)
+![FFlow workflow editor example](doc/images/fflow-workflow-editor.png)
 
 ## Add FFlow to an app
 
@@ -73,15 +73,17 @@ final bounds = graph.nodesBounds;
 
 ## Included editor features
 
-- Drag and resize nodes from eight directions with min/max size, anchor origins, optional content measurement, drag-handle regions, snap-to-grid, global/parent bounds, z-order, and automatic parent expansion.
+- Drag and resize nodes from eight directions with min/max size, anchor origins, optional content measurement, `FFlowNoDrag`/`FFlowNoPan`/`FFlowNoWheel` scopes, drag thresholds, drag-handle regions, snap-to-grid, alignment guides, global/parent bounds, z-order, and automatic parent expansion.
 - Select nodes and edges by clicking or dragging a full/partial selection box; receive click, double-click, hover, context-menu, selection, drag, resize, delete, connect, and reconnect lifecycle callbacks.
 - Navigate focusable nodes and edges with Tab, select with Enter/Space, and move focused nodes with arrow keys (Shift for the larger step). Nodes and edges accept accessible labels, and selection changes are announced.
 - Connect named handles by dragging or clicking; strict mode connects source-to-target, while loose mode also supports source-to-source connections. Validate connections, enforce per-handle capacity, and independently allow reconnecting an edge's source, target, or both.
 - Choose bezier, straight, step, smooth-step, or simple-bezier edges; configure curve, bend, corner radius, floating endpoints, marker color, labels, animation, z-order, and custom edge or connection-line renderers.
-- Constrain viewport panning with `translateExtent`; enable opt-in off-screen node/edge culling for larger graphs.
+- Constrain viewport panning with `translateExtent`; enable opt-in off-screen node/edge culling for larger graphs. Controlled/default viewports, initial fit-to-view, animated viewport changes, and per-interaction ticker-driven auto-pan are available.
 - Control pan/zoom, scroll speed, double-click zoom, fit-to-view, fit-bounds, and centering with `FlowCanvasController`; compose `FFlowControls` and the customizable `FFlowMiniMap`.
 - Add selected-node and selected-edge toolbars through canvas builders, and extend viewport controls with a lock toggle or custom buttons.
-- Use `FlowGraphController` for observable graph state and node/edge queries, `FlowGraphUtils` for immutable graph edits, and `FlowGraphSnapshot` to save/restore typed graph data.
+- Use `FlowGraphController` and `FlowGraphIndex` for observable graph state and indexed queries, `FlowGraphUtils` for immutable graph edits and cascade delete results, `FlowGraphValidator` for diagnostics, and versioned `FlowGraphSnapshot` data to save/restore graphs.
+- Use `FlowHistoryController` for transaction-based undo/redo and `FlowClipboard` for cut/copy/paste with generated-id and parent remapping. The canvas can record drag, resize, delete, and paste transactions when a history controller is supplied.
+- Use layout/router adapter contracts for optional Dagre/ELK or routing packages. Editable edge control points, blank-canvas connection-drop intents, proximity connection suggestions, and dynamic reparenting are opt-in.
 
 The package has no third-party dependencies. React Flow's React hooks, DOM/CSS behavior, and React-specific integrations do not map directly to Flutter; FFlow exposes equivalent graph concepts through Flutter widgets and Dart APIs.
 
@@ -94,7 +96,7 @@ The SDK canvas and graph logic use Flutter/Dart and are shared across targets. P
 | Windows | Flutter Windows runner in `example/windows/`; uses the shared FFlow canvas. | The demo's Windows release build has succeeded on a Windows host. |
 | Linux | Flutter Linux runner in `example/linux/`; uses the shared FFlow canvas. | Runner is included, but a Linux build has not been verified. UOS compatibility is also unverified; check the release bundle's system-library requirements on the target distribution. |
 | macOS | Flutter macOS runner in `example/macos/`; uses the shared FFlow canvas. | Runner is included, but a macOS build has not been verified. |
-| Web | Flutter web runner in `example/web/`; uses the shared FFlow canvas. | Runner is included, but a browser build has not been verified. |
+| Web | Flutter web runner in `example/web/`; uses the shared FFlow canvas. | The demo's Web release build has succeeded on a Windows host. |
 | Android / iOS | Not in scope; the demo has no mobile runners. | Not supported by this project. |
 
 Flutter desktop builds require the platform's development toolchain. Linux release bundles can also depend on system libraries provided by the target distribution, so test Linux packages on each distribution you plan to support.
@@ -149,7 +151,9 @@ FlowNode<MyNodeData>(
 
 Then wrap the desired header or title area inside that node's builder with `FFlowNodeDragHandle(child: ...)`.
 
-FFlow now covers the main graph editing loop and common graph queries. It does not bundle undo/redo history, clipboard operations, collaboration, automatic edge routing, or a layout algorithm suite; applications can build these on the public graph/controller APIs or add their preferred packages. React Flow's React hooks/store, DOM/CSS behavior, and browser-specific integrations remain framework-specific. Benchmark opt-in viewport culling with the node widgets used by each application.
+FFlow covers the main graph editing loop, indexed graph queries, transaction history, and clipboard operations. The core defines extension adapters but does not bundle layout/routing implementations or a collaboration transport/CRDT. React Flow's React hooks/store, DOM/CSS behavior, and browser-specific integrations remain framework-specific. Benchmark opt-in viewport culling with the node widgets used by each application.
+
+See the [coordinate system](doc/coordinate-system.md), [interaction model](doc/interaction-model.md), [performance notes](doc/performance.md), [accessibility guidance](doc/accessibility.md), and [0.x-to-1.0 migration notes](doc/migration/0.x-to-1.0.md). Run the large-graph benchmark with fixed graph/query inputs using `flutter test benchmark/large_graph_benchmark_test.dart`; it writes `benchmark/results.json`.
 
 References: [React Flow interactivity](https://reactflow.dev/learn/concepts/adding-interactivity), [hooks](https://reactflow.dev/api-reference/hooks), [built-in components](https://reactflow.dev/api-reference/components), [sub flows](https://reactflow.dev/learn/layouting/sub-flows), [accessibility](https://reactflow.dev/learn/advanced-use/accessibility), [Flutter desktop support](https://docs.flutter.dev/platform-integration/desktop), and [Flutter Linux builds](https://docs.flutter.dev/platform-integration/linux/building).
 
@@ -237,15 +241,17 @@ The example includes platform runners for Windows, Linux, macOS, and Web. Androi
 lib/
   fflow.dart                 Public package API
   src/
-    canvas/                  Canvas shell, interactions, node/edge rendering, and change dispatch
-    controllers/             Viewport controller
-    geometry/                Handle and edge geometry
-    interactions/            Connection and graph interaction logic
-    models/                  Node, edge, handle, event, selection, snapshot models
-    rendering/               Grid, edges, and handles
+    canvas/                  Canvas shell, gestures, rendering, and change dispatch
+    controllers/             Viewport, graph, history, and clipboard controllers
+    geometry/                Coordinate, edge-path, cache, and hit-test geometry
+    interactions/            Connection logic and extension adapter contracts
+    models/                  Graph, diagnostics, events, snapshots, and transactions
+    rendering/               Grid, edge, and handle rendering
     utils/                   Immutable graph editing helpers
     widgets/                 Controls and minimap
-test/                       Graph utility and canvas callback tests
+test/                       Graph, canvas, and interaction regression tests
+benchmark/                  Fixed-input large-graph measurements
+doc/                         Architecture and user-facing guidance
 example/
   lib/                       Runnable demonstration app
   windows/, linux/, macos/, web/  Supported example app platform runners

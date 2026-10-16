@@ -1,16 +1,27 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 
 import '../controllers/flow_canvas_controller.dart';
+import '../controllers/flow_clipboard.dart';
 import '../controllers/flow_graph_controller.dart';
+import '../controllers/flow_history_controller.dart';
+import '../geometry/flow_edge_geometry_cache.dart';
 import '../geometry/flow_geometry.dart';
 import '../interactions/flow_graph_interaction.dart';
+import '../interactions/flow_hit_test.dart';
+import '../interactions/flow_interaction_session.dart';
+import '../interactions/flow_pointer_capture.dart';
 import '../models/flow_connection.dart';
 import '../models/flow_edge.dart';
+import '../models/flow_diagnostic.dart';
+import '../models/flow_graph_index.dart';
+import '../models/flow_graph_transaction.dart';
 import '../models/flow_events.dart';
 import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
@@ -28,6 +39,7 @@ part 'flow_canvas_viewport.dart';
 part 'flow_canvas_nodes.dart';
 part 'flow_canvas_edges.dart';
 part 'flow_canvas_changes.dart';
+part 'flow_canvas_interaction.dart';
 
 final Set<LogicalKeyboardKey> _defaultDeleteKeyCodes = Set.unmodifiable([
   LogicalKeyboardKey.delete,
@@ -83,15 +95,115 @@ class FFlowNodeDragHandle extends StatelessWidget {
     if (scope == null) {
       throw FlutterError('FFlowNodeDragHandle must be inside an FFlow node.');
     }
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanStart: scope.onPanStart,
-      onPanUpdate: scope.onPanUpdate,
-      onPanEnd: scope.onPanEnd,
-      onPanCancel: scope.onPanCancel,
-      child: child,
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) =>
+          _FlowInteractionLocks.dragHandle.add(event.pointer),
+      onPointerUp: (event) =>
+          _FlowInteractionLocks.dragHandle.remove(event.pointer),
+      onPointerCancel: (event) =>
+          _FlowInteractionLocks.dragHandle.remove(event.pointer),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onPanStart: scope.onPanStart,
+        onPanUpdate: scope.onPanUpdate,
+        onPanEnd: scope.onPanEnd,
+        onPanCancel: scope.onPanCancel,
+        child: child,
+      ),
     );
   }
+}
+
+/// Prevents the containing node from starting a node drag from [child].
+///
+/// This is useful for controls that need their own horizontal drag gesture,
+/// such as sliders, text selection handles, and embedded editors.
+class FFlowNoDrag extends StatelessWidget {
+  const FFlowNoDrag({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) =>
+            _FlowInteractionLocks.noDrag.add(event.pointer),
+        onPointerUp: (event) =>
+            _FlowInteractionLocks.noDrag.remove(event.pointer),
+        onPointerCancel: (event) =>
+            _FlowInteractionLocks.noDrag.remove(event.pointer),
+        child: child,
+      );
+}
+
+/// Marks [child] as an area where pointer drags should not pan the canvas.
+class FFlowNoPan extends StatelessWidget {
+  const FFlowNoPan({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) =>
+            _FlowInteractionLocks.noPan.add(event.pointer),
+        onPointerUp: (event) =>
+            _FlowInteractionLocks.noPan.remove(event.pointer),
+        onPointerCancel: (event) =>
+            _FlowInteractionLocks.noPan.remove(event.pointer),
+        child: child,
+      );
+}
+
+/// Marks [child] as an area where pointer wheel and trackpad scroll events
+/// should not zoom or pan the canvas.
+class FFlowNoWheel extends StatefulWidget {
+  const FFlowNoWheel({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<FFlowNoWheel> createState() => _FFlowNoWheelState();
+}
+
+class _FFlowNoWheelState extends State<FFlowNoWheel> {
+  @override
+  void initState() {
+    super.initState();
+    _FlowInteractionLocks.noWheelRegions.add(this);
+  }
+
+  @override
+  void dispose() {
+    _FlowInteractionLocks.noWheelRegions.remove(this);
+    super.dispose();
+  }
+
+  bool containsGlobalPosition(Offset position) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      return false;
+    }
+    final rect = Rect.fromPoints(
+      renderObject.localToGlobal(Offset.zero),
+      renderObject.localToGlobal(renderObject.size.bottomRight(Offset.zero)),
+    );
+    return rect.contains(position);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+abstract final class _FlowInteractionLocks {
+  static final Set<int> noDrag = {};
+  static final Set<int> noPan = {};
+  static final Set<int> dragHandle = {};
+  static final Set<_FFlowNoWheelState> noWheelRegions = {};
+
+  static bool blocksWheelAt(Offset position) =>
+      noWheelRegions.any((region) => region.containsGlobalPosition(position));
 }
 
 class _FlowNodeDragScope extends InheritedWidget {
@@ -144,6 +256,10 @@ class FFlowCanvas<T> extends StatefulWidget {
     required this.nodeBuilder,
     this.controller,
     this.graphController,
+    this.historyController,
+    this.clipboard,
+    this.createId,
+    this.clipboardPasteOffset,
     this.transformationController,
     this.onNodesChanged,
     this.onEdgesChanged,
@@ -153,7 +269,18 @@ class FFlowCanvas<T> extends StatefulWidget {
     this.onNodeSelected,
     this.onSelectionChanged,
     this.onViewportChanged,
+    this.viewport,
+    this.defaultViewport,
+    this.onViewportChange,
+    this.onMoveStart,
+    this.onMove,
+    this.onMoveEnd,
+    this.fitViewOnInit = false,
+    this.fitViewOptions = const FlowFitViewOptions(),
     this.isValidConnection,
+    this.validateGraphOnChange = false,
+    this.onDiagnostics,
+    this.onError,
     this.gridSpacing = 24,
     this.backgroundVariant = FlowBackgroundVariant.dots,
     this.gridColor = const Color(0xFF272D39),
@@ -173,8 +300,19 @@ class FFlowCanvas<T> extends StatefulWidget {
     this.zoomOnDoubleClick = true,
     this.snapGrid,
     this.onReconnect,
+    this.onConnectionDrop,
+    this.proximityConnect = false,
+    this.proximityConnectThreshold = 32,
+    this.onProximityConnect,
+    this.dynamicReparenting = false,
+    this.edgeControlPointsEditable = false,
+    this.helperLinesEnabled = false,
+    this.helperLineSnap = true,
+    this.helperLineThreshold = 6,
     this.selectionOnDrag = false,
     this.selectionMode = FlowSelectionMode.partial,
+    this.edgeSelectionMode = FlowSelectionMode.partial,
+    this.selectAllIncludesHidden = false,
     this.connectionMode = FlowConnectionMode.strict,
     this.translateExtent,
     this.nodeExtent,
@@ -183,8 +321,15 @@ class FFlowCanvas<T> extends StatefulWidget {
     this.connectOnClick = true,
     this.onlyRenderVisibleElements = false,
     this.autoPan = true,
+    this.autoPanOnNodeDrag = true,
+    this.autoPanOnConnect = true,
+    this.autoPanOnSelection = true,
     this.autoPanMargin = 48,
     this.autoPanSpeed = 12,
+    this.nodeHitTestTolerance = 12,
+    this.nodeDragThreshold = 1,
+    this.connectionDragThreshold = 1,
+    this.selectionDragThreshold = 3,
     this.onNodeDragStart,
     this.onNodeDrag,
     this.onNodeDragEnd,
@@ -229,7 +374,10 @@ class FFlowCanvas<T> extends StatefulWidget {
     Set<LogicalKeyboardKey>? deleteKeyCodes,
     Set<LogicalKeyboardKey>? selectionKeyCodes,
     Set<LogicalKeyboardKey>? multiSelectionKeyCodes,
-  })  : assert((nodes == null) == (edges == null),
+  })  : assert(nodeDragThreshold >= 0 &&
+            connectionDragThreshold >= 0 &&
+            selectionDragThreshold >= 0),
+        assert((nodes == null) == (edges == null),
             'Pass both nodes and edges, or omit both when using graphController.'),
         assert(graphController != null || nodes != null,
             'Pass nodes and edges or provide graphController.'),
@@ -247,6 +395,10 @@ class FFlowCanvas<T> extends StatefulWidget {
   final FlowNodeBuilder<T> nodeBuilder;
   final FlowCanvasController? controller;
   final FlowGraphController<T>? graphController;
+  final FlowHistoryController<T>? historyController;
+  final FlowClipboard<T>? clipboard;
+  final String Function()? createId;
+  final Offset? clipboardPasteOffset;
 
   /// Compatibility with Flutter's built-in InteractiveViewer controller.
   final TransformationController? transformationController;
@@ -264,7 +416,18 @@ class FFlowCanvas<T> extends StatefulWidget {
   final ValueChanged<String?>? onNodeSelected;
   final ValueChanged<FlowSelection>? onSelectionChanged;
   final ValueChanged<FlowViewport>? onViewportChanged;
+  final FlowViewport? viewport;
+  final FlowViewport? defaultViewport;
+  final ValueChanged<FlowViewport>? onViewportChange;
+  final ValueChanged<FlowViewport>? onMoveStart;
+  final ValueChanged<FlowViewport>? onMove;
+  final ValueChanged<FlowViewport>? onMoveEnd;
+  final bool fitViewOnInit;
+  final FlowFitViewOptions fitViewOptions;
   final bool Function(FlowConnection connection)? isValidConnection;
+  final bool validateGraphOnChange;
+  final ValueChanged<List<FlowDiagnostic>>? onDiagnostics;
+  final ValueChanged<FlowDiagnostic>? onError;
   final double gridSpacing;
   final FlowBackgroundVariant backgroundVariant;
   final Color gridColor;
@@ -286,11 +449,24 @@ class FFlowCanvas<T> extends StatefulWidget {
   final bool zoomOnDoubleClick;
   final Offset? snapGrid;
   final ValueChanged<FlowEdge>? onReconnect;
+  final ValueChanged<FlowConnectionDrop>? onConnectionDrop;
+  final bool proximityConnect;
+  final double proximityConnectThreshold;
+  final ValueChanged<FlowConnection>? onProximityConnect;
+  final bool dynamicReparenting;
+  final bool edgeControlPointsEditable;
+  final bool helperLinesEnabled;
+  final bool helperLineSnap;
+  final double helperLineThreshold;
 
   /// Allows blank-canvas dragging to create a selection box. Shift-drag works
   /// regardless of this setting.
   final bool selectionOnDrag;
   final FlowSelectionMode selectionMode;
+  final FlowSelectionMode edgeSelectionMode;
+
+  /// Include hidden nodes and edges in the select-all keyboard shortcut.
+  final bool selectAllIncludesHidden;
   final FlowConnectionMode connectionMode;
 
   /// Optional canvas-coordinate bounds used to constrain viewport panning.
@@ -314,8 +490,18 @@ class FFlowCanvas<T> extends StatefulWidget {
   /// Auto-pan near the viewport edge while dragging nodes, selecting, or
   /// creating/reconnecting edges.
   final bool autoPan;
+  final bool autoPanOnNodeDrag;
+  final bool autoPanOnConnect;
+  final bool autoPanOnSelection;
   final double autoPanMargin;
   final double autoPanSpeed;
+
+  /// Extra graph-space padding used consistently for node pointer and
+  /// context-menu hit testing. Set to zero to match the rendered node bounds.
+  final double nodeHitTestTolerance;
+  final double nodeDragThreshold;
+  final double connectionDragThreshold;
+  final double selectionDragThreshold;
 
   /// Node lifecycle callbacks receive the updated node model.
   final ValueChanged<FlowNode<T>>? onNodeDragStart;
@@ -381,13 +567,33 @@ class FFlowCanvas<T> extends StatefulWidget {
 }
 
 class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final FlowCanvasController _ownedController;
   late TransformationController _transformController;
   late List<FlowNode<T>> _nodes;
   late List<FlowEdge> _edges;
   late List<FlowNode<T>> _lastPublishedNodes;
   late List<FlowEdge> _lastPublishedEdges;
+  late FlowGraphIndex<T> _graphIndex;
+  int _graphRevision = 0;
+  int _geometryRevision = 0;
+  final FlowEdgeGeometryCache _edgeGeometryCache = FlowEdgeGeometryCache();
+  final FlowHitTestIndex _hitTestIndex = FlowHitTestIndex();
+  bool _hitTestIndexDirty = true;
+  Offset _sceneOrigin = Offset.zero;
+  Size _sceneSize = Size.zero;
+  bool _updatingSceneFrame = false;
+  bool _applyingHistory = false;
+  bool _didInitializeViewport = false;
+  bool _viewportInteractionActive = false;
+  AnimationController? _viewportAnimationController;
+  Map<String, int> _nodePaintRanks = {};
+  Map<String, int> _edgePaintRanks = {};
+  final FlowHitTestEngine _flowHitTestEngine = const FlowHitTestEngine();
+  final Map<int, FlowPointerCapture> _pointerCaptures = {};
+  final Map<Object, Set<int>> _gesturePointerIds = {};
+  FlowInteractionSession? _interactionSession;
+  FlowAlignmentGuides? _alignmentGuides;
   bool _publishingGraphController = false;
   final Set<String> _selectedNodes = {};
   final Set<String> _selectedEdges = {};
@@ -398,6 +604,9 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   bool _clampingViewport = false;
   Size _viewportSize = Size.zero;
   FlowConnectionStart? _connectionGestureStart;
+  Offset? _connectionStartGlobal;
+  int? _connectionPointerId;
+  bool _connectionThresholdMet = false;
   String _accessibilityAnnouncement = '';
   late final AnimationController _animationController;
   String? _connectingNodeId;
@@ -408,24 +617,40 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   String? _reconnectingEdgeId;
   bool _reconnectingSource = false;
   String? _draggingNodeId;
-  Offset? _lastDragGlobalPosition;
+  String? _pendingNodeDragId;
+  Offset? _nodeDragStartGlobal;
+  Offset? _lastDragFlowPosition;
+  int? _pendingNodeDragPointerId;
   bool _selectionKeyPressed = false;
   Offset? _selectionBoxStart;
   Offset? _selectionBoxEnd;
+  int? _selectionCandidatePointerId;
+  Offset? _selectionCandidateGlobalPosition;
+  Offset? _selectionCandidateFlowPosition;
   String? _resizingNodeId;
   Offset? _resizeStartGlobal;
+  Offset? _resizeStartFlowPosition;
   Size? _resizeStartSize;
   Offset? _resizeStartPosition;
+  int? _resizePointerId;
   _FlowResizeDirection _resizeDirection = _FlowResizeDirection.bottomRight;
-  String? _pointerDownNodeId;
-  bool _nodeWasSelectedOnPointerDown = false;
   bool _pointerDownPane = false;
   Offset? _paneDownPosition;
   String? _hoveredEdgeId;
   bool _pointerOverPane = false;
+  bool _pointerNoDrag = false;
+  bool _pointerNoPan = false;
+  double? _pinchStartZoom;
+  Ticker? _autoPanTicker;
+  Offset? _autoPanPointerGlobal;
+  FlowAutoPanInteraction? _autoPanInteraction;
+  Duration? _autoPanLastTick;
   Duration? _lastEdgeClickAt;
   Offset? _lastEdgeClickPosition;
   String? _lastEdgeClickId;
+  Duration? _lastNodeClickAt;
+  Offset? _lastNodeClickPosition;
+  String? _lastNodeClickId;
   Duration? _lastBlankPointerDown;
   Offset? _lastBlankPointerPosition;
 
@@ -436,6 +661,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     _edges = List.of(widget.edges ?? widget.graphController?.edges ?? const []);
     _lastPublishedNodes = List.of(_nodes);
     _lastPublishedEdges = List.of(_edges);
+    _refreshGraphIndex();
     _selectedNodes
         .addAll(_nodes.where((node) => node.selected).map((node) => node.id));
     _selectedEdges
@@ -446,7 +672,14 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
       duration: const Duration(milliseconds: 1100),
     );
     _transformController = _controllerFor(widget);
+    final initialViewport = widget.viewport ?? widget.defaultViewport;
+    if (initialViewport != null) _applyViewport(initialViewport);
+    _didInitializeViewport = widget.viewport != null ||
+        widget.defaultViewport != null ||
+        !widget.fitViewOnInit;
+    _focusNode.addListener(_handleCanvasFocusChanged);
     _transformController.addListener(_handleTransformChanged);
+    _reportGraphDiagnostics();
     widget.graphController?.addListener(_handleGraphControllerChanged);
     HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
     _syncEdgeAnimation();
@@ -455,6 +688,8 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   @override
   void didUpdateWidget(covariant FFlowCanvas<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final oldNodes = _nodes;
+    final oldEdges = _edges;
     if (!identical(oldWidget.graphController, widget.graphController)) {
       oldWidget.graphController?.removeListener(_handleGraphControllerChanged);
       widget.graphController?.addListener(_handleGraphControllerChanged);
@@ -477,6 +712,9 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
       _transformController = nextController;
       _transformController.addListener(_handleTransformChanged);
     }
+    if (widget.viewport != null && widget.viewport != oldWidget.viewport) {
+      _applyViewport(widget.viewport!);
+    }
     if (widget.nodes != null && !identical(oldWidget.nodes, widget.nodes)) {
       _nodes = List.of(widget.nodes!);
       _selectedNodes
@@ -495,6 +733,13 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     _selectedEdges.removeWhere((id) => !_edges.any((edge) => edge.id == id));
     _lastPublishedNodes = List.of(_nodes);
     _lastPublishedEdges = List.of(_edges);
+    if (!identical(oldWidget.graphController, widget.graphController) ||
+        !identical(oldWidget.nodes, widget.nodes) ||
+        !identical(oldWidget.edges, widget.edges)) {
+      _recordExternalHistory(oldNodes, oldEdges, _nodes, _edges);
+    }
+    _refreshGraphIndex();
+    _reportGraphDiagnostics();
   }
 
   TransformationController _controllerFor(FFlowCanvas<T> configuration) =>
@@ -504,7 +749,21 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
 
   @override
   void dispose() {
+    _stopAutoPan();
+    _interactionSession = null;
+    for (final pointerId in _pointerCaptures.keys) {
+      _FlowInteractionLocks.noDrag.remove(pointerId);
+      _FlowInteractionLocks.noPan.remove(pointerId);
+      _FlowInteractionLocks.dragHandle.remove(pointerId);
+    }
+    _pointerCaptures.clear();
+    _gesturePointerIds.clear();
+    final history = widget.historyController;
+    if (history?.isRecording ?? false) {
+      history!.commitTransaction(_captureGraphState());
+    }
     _transformController.removeListener(_handleTransformChanged);
+    _focusNode.removeListener(_handleCanvasFocusChanged);
     widget.graphController?.removeListener(_handleGraphControllerChanged);
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     _focusNode.dispose();
@@ -515,18 +774,27 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
       edge.dispose();
     }
     _animationController.dispose();
+    _viewportAnimationController?.dispose();
+    _autoPanTicker?.dispose();
     _ownedController.dispose();
     super.dispose();
   }
 
   void _handleGraphControllerChanged() {
     if (_publishingGraphController || !mounted) return;
+    _cancelActiveInteraction();
+    if (_connectionGestureStart != null) _cancelConnection();
     final graphController = widget.graphController;
     if (graphController == null) return;
+    final oldNodes = _nodes;
+    final oldEdges = _edges;
     _nodes = List.of(graphController.nodes);
     _edges = List.of(graphController.edges);
+    _recordExternalHistory(oldNodes, oldEdges, _nodes, _edges);
     _lastPublishedNodes = List.of(_nodes);
     _lastPublishedEdges = List.of(_edges);
+    _refreshGraphIndex();
+    _reportGraphDiagnostics();
     _selectedNodes
       ..clear()
       ..addAll(_nodes.where((node) => node.selected).map((node) => node.id));
@@ -543,6 +811,11 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   }
 
   void _publishGraph({bool nodesChanged = false, bool edgesChanged = false}) {
+    final beforeNodes = _lastPublishedNodes;
+    final beforeEdges = _lastPublishedEdges;
+    _refreshGraphIndex();
+    _reportGraphDiagnostics();
+    _recordExternalHistory(beforeNodes, beforeEdges, _nodes, _edges);
     final nodeChanges =
         nodesChanged ? _diffNodes(_lastPublishedNodes, _nodes) : null;
     final edgeChanges =
@@ -569,6 +842,115 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     }
   }
 
+  FlowGraphState<T> _captureGraphState() => FlowGraphState<T>(
+        nodes: _nodes,
+        edges: _edges,
+        selection: _selection,
+      );
+
+  void _recordExternalHistory(
+    List<FlowNode<T>> beforeNodes,
+    List<FlowEdge> beforeEdges,
+    List<FlowNode<T>> afterNodes,
+    List<FlowEdge> afterEdges,
+  ) {
+    final history = widget.historyController;
+    if (_applyingHistory || history == null || history.isRecording) return;
+    if (_historyFingerprint(beforeNodes, beforeEdges) ==
+        _historyFingerprint(afterNodes, afterEdges)) {
+      return;
+    }
+    history.record(
+      label: 'Edit graph',
+      before: FlowGraphState<T>(nodes: beforeNodes, edges: beforeEdges),
+      after: FlowGraphState<T>(nodes: afterNodes, edges: afterEdges),
+    );
+  }
+
+  int _historyFingerprint(
+    Iterable<FlowNode<T>> nodes,
+    Iterable<FlowEdge> edges,
+  ) =>
+      Object.hashAll([
+        for (final node in nodes)
+          Object.hashAll([
+            node.id,
+            node.type,
+            node.position,
+            node.data,
+            node.width,
+            node.height,
+            node.hasInput,
+            node.hasOutput,
+            Object.hashAll(node.handles),
+            node.draggable,
+            node.resizable,
+            node.selectable,
+            node.deletable,
+            node.connectable,
+            node.hidden,
+            node.parentId,
+            node.origin,
+            node.extent,
+            node.extentToParent,
+            node.expandParent,
+            node.minWidth,
+            node.minHeight,
+            node.maxWidth,
+            node.maxHeight,
+            node.zIndex,
+            node.groupable,
+          ]),
+        for (final edge in edges)
+          Object.hashAll([
+            edge.id,
+            edge.sourceId,
+            edge.targetId,
+            edge.sourceHandleId,
+            edge.targetHandleId,
+            edge.targetHandleType,
+            edge.type,
+            edge.customType,
+            edge.label,
+            edge.color,
+            edge.strokeWidth,
+            edge.markerStart,
+            edge.markerEnd,
+            edge.selectable,
+            edge.deletable,
+            edge.reconnectable,
+            edge.hidden,
+            edge.animated,
+            edge.interactionWidth,
+            edge.data,
+            edge.curvature,
+            edge.stepPosition,
+            edge.cornerRadius,
+            edge.controlPoints,
+          ]),
+      ]);
+
+  void _applyHistoryState(FlowGraphState<T> state) {
+    _cancelActiveInteraction();
+    if (_connectionGestureStart != null) _cancelConnection();
+    _applyingHistory = true;
+    _nodes = state.nodes;
+    _edges = state.edges;
+    _selectedNodes
+      ..clear()
+      ..addAll(state.selection.nodes);
+    _selectedEdges
+      ..clear()
+      ..addAll(state.selection.edges);
+    _refreshGraphIndex();
+    _syncFocusNodes();
+    _syncEdgeAnimation();
+    _publishGraph(nodesChanged: true, edgesChanged: true);
+    _applyingHistory = false;
+    _rebuild(() {});
+    widget.onSelectionChanged?.call(_selection);
+  }
+
   void _publishNodes() => _publishGraph(nodesChanged: true);
 
   void _publishEdges() => _publishGraph(edgesChanged: true);
@@ -578,7 +960,11 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   }
 
   void _handleTransformChanged() {
+    if (_updatingSceneFrame) return;
     final matrix = _transformController.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    final effectiveX = matrix.entry(0, 3) - scale * _sceneOrigin.dx;
+    final effectiveY = matrix.entry(1, 3) - scale * _sceneOrigin.dy;
     final extent = widget.translateExtent;
     if (!_clampingViewport && extent != null && !_viewportSize.isEmpty) {
       final scale = matrix.getMaxScaleOnAxis();
@@ -587,18 +973,18 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
       final minY = _viewportSize.height - extent.bottom * scale;
       final maxY = -extent.top * scale;
       final x = minX <= maxX
-          ? matrix.entry(0, 3).clamp(minX, maxX).toDouble()
+          ? effectiveX.clamp(minX, maxX).toDouble()
           : (minX + maxX) / 2;
       final y = minY <= maxY
-          ? matrix.entry(1, 3).clamp(minY, maxY).toDouble()
+          ? effectiveY.clamp(minY, maxY).toDouble()
           : (minY + maxY) / 2;
-      if (x != matrix.entry(0, 3) || y != matrix.entry(1, 3)) {
+      if (x != effectiveX || y != effectiveY) {
         _clampingViewport = true;
         _transformController.value = Matrix4.copy(matrix)
-          ..setEntry(0, 3, x)
-          ..setEntry(1, 3, y);
+          ..setEntry(0, 3, x + scale * _sceneOrigin.dx)
+          ..setEntry(1, 3, y + scale * _sceneOrigin.dy);
         _clampingViewport = false;
-        widget.onViewportChanged?.call(FlowViewport(
+        _emitViewport(FlowViewport(
           x: x,
           y: y,
           zoom: scale,
@@ -607,12 +993,218 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
         return;
       }
     }
-    widget.onViewportChanged?.call(FlowViewport(
-      x: matrix.entry(0, 3),
-      y: matrix.entry(1, 3),
-      zoom: matrix.getMaxScaleOnAxis(),
+    _emitViewport(FlowViewport(
+      x: effectiveX,
+      y: effectiveY,
+      zoom: scale,
     ));
     if (widget.onlyRenderVisibleElements && mounted) setState(() {});
+  }
+
+  void _emitViewport(FlowViewport viewport) {
+    widget.onViewportChanged?.call(viewport);
+    widget.onViewportChange?.call(viewport);
+    widget.onMove?.call(viewport);
+  }
+
+  FlowViewport _currentViewport() {
+    final matrix = _transformController.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    return FlowViewport(
+      x: matrix.entry(0, 3) - scale * _sceneOrigin.dx,
+      y: matrix.entry(1, 3) - scale * _sceneOrigin.dy,
+      zoom: scale,
+    );
+  }
+
+  void _applyViewport(FlowViewport viewport) {
+    if (_transformController is FlowCanvasController) {
+      (_transformController as FlowCanvasController).setViewport(viewport);
+    } else {
+      _transformController.value = Matrix4.identity()
+        ..translateByDouble(
+          viewport.x + viewport.zoom * _sceneOrigin.dx,
+          viewport.y + viewport.zoom * _sceneOrigin.dy,
+          0,
+          1,
+        )
+        ..scaleByDouble(viewport.zoom, viewport.zoom, 1, 1);
+    }
+  }
+
+  void _fitViewInitially() {
+    _didInitializeViewport = true;
+    final options = widget.fitViewOptions;
+    final bounds = FlowGeometry.nodesBounds(_nodes);
+    final viewport = FlowGraphUtils.getViewportForBounds(
+      bounds,
+      _viewportSize,
+      padding: options.padding,
+      minZoom: options.minZoom,
+      maxZoom: options.maxZoom,
+    );
+    if (options.duration == Duration.zero) {
+      _applyViewport(viewport);
+      return;
+    }
+    if (_transformController is FlowCanvasController) {
+      (_transformController as FlowCanvasController).animateToViewport(
+        viewport,
+        vsync: this,
+        duration: options.duration,
+        curve: options.curve,
+      );
+      return;
+    }
+    _animateViewport(viewport, options);
+  }
+
+  Future<bool> _animateViewport(
+      FlowViewport target, FlowFitViewOptions options) async {
+    _viewportAnimationController?.dispose();
+    final start = _currentViewport();
+    final controller = AnimationController(
+      vsync: this,
+      duration: options.duration,
+    );
+    _viewportAnimationController = controller;
+    final animation = CurvedAnimation(parent: controller, curve: options.curve);
+    void update() {
+      _applyViewport(FlowViewport(
+        x: start.x + (target.x - start.x) * animation.value,
+        y: start.y + (target.y - start.y) * animation.value,
+        zoom: start.zoom + (target.zoom - start.zoom) * animation.value,
+      ));
+    }
+
+    animation.addListener(update);
+    try {
+      await controller.forward().orCancel;
+    } on TickerCanceled {
+      return false;
+    } finally {
+      animation
+        ..removeListener(update)
+        ..dispose();
+      if (identical(_viewportAnimationController, controller)) {
+        _viewportAnimationController = null;
+      }
+      controller.dispose();
+    }
+    return true;
+  }
+
+  Offset get _sceneOffset => Offset(-_sceneOrigin.dx, -_sceneOrigin.dy);
+
+  Offset _screenToFlow(Offset viewportPosition) =>
+      _transformController.toScene(viewportPosition) + _sceneOrigin;
+
+  void _refreshGraphIndex() {
+    _graphRevision++;
+    final geometry = Object.hashAll([
+      for (final node in _nodes)
+        Object.hash(
+            node.id,
+            node.position,
+            node.width,
+            node.height,
+            node.origin,
+            node.parentId,
+            Object.hashAll(node.resolvedHandles.map((handle) => Object.hash(
+                  handle.id,
+                  handle.type,
+                  handle.position,
+                  handle.offset,
+                )))),
+      for (final edge in _edges)
+        Object.hash(
+          edge.id,
+          edge.sourceId,
+          edge.targetId,
+          edge.sourceHandleId,
+          edge.targetHandleId,
+          edge.targetHandleType,
+          edge.type,
+          edge.floating,
+          edge.curvature,
+          edge.stepPosition,
+          edge.cornerRadius,
+          Object.hashAll(edge.controlPoints),
+        ),
+    ]);
+    if (geometry != _geometryRevisionSignature) {
+      _geometryRevision++;
+      _geometryRevisionSignature = geometry;
+    }
+    _graphIndex = FlowGraphIndex<T>(
+      nodes: _nodes,
+      edges: _edges,
+      graphRevision: _graphRevision,
+      geometryRevision: _geometryRevision,
+    );
+    _edgeGeometryCache.retainEdges(_edges);
+    _hitTestIndexDirty = true;
+    _cancelInteractionIfTargetWasRemoved();
+  }
+
+  void _reportGraphDiagnostics() {
+    if (!widget.validateGraphOnChange &&
+        widget.onDiagnostics == null &&
+        widget.onError == null) {
+      return;
+    }
+    final diagnostics = FlowGraphValidator.validate<T>(
+      nodes: _nodes,
+      edges: _edges,
+      viewport: _currentViewport(),
+      minZoom: widget.minZoom,
+      maxZoom: widget.maxZoom,
+      translateExtent: widget.translateExtent,
+      connectionMode: widget.connectionMode,
+    );
+    widget.onDiagnostics?.call(diagnostics);
+    for (final diagnostic in diagnostics) {
+      if (diagnostic.severity == FlowDiagnosticSeverity.error) {
+        widget.onError?.call(diagnostic);
+      }
+    }
+  }
+
+  int? _geometryRevisionSignature;
+
+  void _updateSceneFrame(Size viewportSize) {
+    var bounds = Rect.fromLTWH(
+      0,
+      0,
+      math.max(1, viewportSize.width),
+      math.max(1, viewportSize.height),
+    );
+    for (final node in _nodes) {
+      if (!FlowGeometry.isVisible(node, _graphIndex.nodesById)) continue;
+      bounds = bounds
+          .expandToInclude(FlowGeometry.nodeRect(node, _graphIndex.nodesById));
+    }
+    bounds = bounds.inflate(256);
+    final nextOrigin = bounds.topLeft;
+    _sceneSize = Size(math.max(1, bounds.width), math.max(1, bounds.height));
+    if (nextOrigin == _sceneOrigin) return;
+    final delta = nextOrigin - _sceneOrigin;
+    final matrix = _transformController.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    _updatingSceneFrame = true;
+    matrix
+      ..setEntry(0, 3, matrix.entry(0, 3) + scale * delta.dx)
+      ..setEntry(1, 3, matrix.entry(1, 3) + scale * delta.dy);
+    _sceneOrigin = nextOrigin;
+    if (_transformController is FlowCanvasController) {
+      (_transformController as FlowCanvasController)
+          .updateSceneOrigin(nextOrigin);
+    }
+    _updatingSceneFrame = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _transformController.value = Matrix4.copy(_transformController.value);
+    });
   }
 
   void _syncFocusNodes() {
@@ -649,9 +1241,24 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
 
   @override
   Widget build(BuildContext context) {
-    final nodesById = {for (final node in _nodes) node.id: node};
+    final nodesById = _graphIndex.nodesById;
+    if (_hitTestIndexDirty) {
+      _hitTestIndex.rebuild(
+        nodes: _nodes.where((node) => FlowGeometry.isVisible(node, nodesById)),
+        edges: _edges.where((edge) => !edge.hidden),
+        nodesById: nodesById,
+        geometryCache: _edgeGeometryCache,
+        nodeHitTestTolerance: widget.nodeHitTestTolerance,
+        edgeHitTestScale: 1 / widget.minZoom,
+      );
+      _hitTestIndexDirty = false;
+    }
     final allVisibleNodes = _orderedVisibleNodes(nodesById);
     final orderedEdges = _orderedVisibleEdges();
+    final verticalGuide =
+        widget.helperLinesEnabled ? _alignmentGuides?.vertical : null;
+    final horizontalGuide =
+        widget.helperLinesEnabled ? _alignmentGuides?.horizontal : null;
     final viewport = _sceneViewportRect;
     final visibleNodes = widget.onlyRenderVisibleElements && viewport != null
         ? allVisibleNodes
@@ -659,35 +1266,48 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                 FlowGeometry.nodeRect(node, nodesById).overlaps(viewport))
             .toList(growable: false)
         : allVisibleNodes;
+    _nodePaintRanks = {
+      for (var index = 0; index < visibleNodes.length; index++)
+        visibleNodes[index].id: index,
+    };
+    _edgePaintRanks = {
+      for (var index = 0; index < orderedEdges.length; index++)
+        orderedEdges[index].id: index,
+    };
     final edgeLayers = <Widget>[];
-    final pendingDefaultEdges = <FlowEdge>[];
-    void flushDefaultEdges() {
-      if (pendingDefaultEdges.isEmpty) return;
+    final pendingStaticEdges = <FlowEdge>[];
+    final pendingAnimatedEdges = <FlowEdge>[];
+    void flushDefaultEdges(List<FlowEdge> pending, {required bool animated}) {
+      if (pending.isEmpty) return;
       edgeLayers.add(Positioned.fill(
         child: CustomPaint(
           painter: FlowEdgesPainter<T>(
             nodes: _nodes,
-            edges: List.unmodifiable(pendingDefaultEdges),
+            edges: List.unmodifiable(pending),
             selectedEdgeIds: _selectedEdges,
             defaultColor: widget.edgeColor,
             previewStart: null,
             previewTarget: null,
             previewColor: widget.connectionColor,
             animation: _animationController,
+            geometryCache: _edgeGeometryCache,
+            sceneOffset: _sceneOffset,
+            repaintOnAnimation: animated,
           ),
         ),
       ));
-      pendingDefaultEdges.clear();
+      pending.clear();
     }
 
     for (final edge in orderedEdges) {
       if (edge.hidden || !_edgeInViewport(edge, nodesById)) continue;
       final builder = widget.edgeTypes[edge.customType ?? edge.type.name];
       if (builder == null) {
-        pendingDefaultEdges.add(edge);
+        (edge.animated ? pendingAnimatedEdges : pendingStaticEdges).add(edge);
         continue;
       }
-      flushDefaultEdges();
+      flushDefaultEdges(pendingStaticEdges, animated: false);
+      flushDefaultEdges(pendingAnimatedEdges, animated: true);
       final source = FlowGeometry.edgeSource(edge, nodesById);
       final target = FlowGeometry.edgeTarget(edge, nodesById);
       if (source != null && target != null) {
@@ -695,14 +1315,15 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
           child: builder(
             context,
             edge,
-            source,
-            target,
+            source + _sceneOffset,
+            target + _sceneOffset,
             _selectedEdges.contains(edge.id),
           ),
         ));
       }
     }
-    flushDefaultEdges();
+    flushDefaultEdges(pendingStaticEdges, animated: false);
+    flushDefaultEdges(pendingAnimatedEdges, animated: true);
     return MouseRegion(
       onExit: _handleCanvasMouseExit,
       child: Semantics(
@@ -713,10 +1334,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
           child: Focus(
             focusNode: _focusNode,
             skipTraversal: true,
-            onKeyEvent: (node, event) {
-              _handleKey(node, event);
-              return KeyEventResult.ignored;
-            },
+            onKeyEvent: _handleKey,
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handlePointerDown,
@@ -727,10 +1345,15 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
               child: LayoutBuilder(builder: (context, constraints) {
                 final viewportSize =
                     Size(constraints.maxWidth, constraints.maxHeight);
+                _updateSceneFrame(viewportSize);
                 if (_viewportSize != viewportSize) {
                   _viewportSize = viewportSize;
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _handleTransformChanged();
+                    if (!mounted) return;
+                    if (!_didInitializeViewport && widget.fitViewOnInit) {
+                      _fitViewInitially();
+                    }
+                    _handleTransformChanged();
                   });
                 }
                 if (_transformController is FlowCanvasController) {
@@ -742,19 +1365,37 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                     color: widget.backgroundColor,
                     child: InteractiveViewer(
                       transformationController: _transformController,
+                      onInteractionStart: (_) {
+                        _beginCanvasPanInteraction();
+                        _pinchStartZoom =
+                            _transformController.value.getMaxScaleOnAxis();
+                        _viewportInteractionActive = true;
+                        widget.onMoveStart?.call(_currentViewport());
+                      },
+                      onInteractionEnd: (_) {
+                        _endCanvasPanInteraction();
+                        if (!_viewportInteractionActive) return;
+                        _viewportInteractionActive = false;
+                        widget.onMoveEnd?.call(_currentViewport());
+                      },
                       minScale: widget.minZoom,
                       maxScale: widget.maxZoom,
                       panEnabled: widget.panEnabled &&
+                          !widget.selectionOnDrag &&
+                          !_pointerNoPan &&
                           !_selectionKeyPressed &&
                           !_isSelectionKeyDown &&
                           !_selectionDragActive,
-                      scaleEnabled: widget.zoomEnabled,
-                      trackpadScrollCausesScale: false,
+                      // Route scale changes through the canvas so wheel scopes
+                      // can suppress them per global pointer position.
+                      scaleEnabled: false,
+                      trackpadScrollCausesScale: true,
+                      onInteractionUpdate: _handleInteractionUpdate,
                       constrained: false,
                       boundaryMargin: const EdgeInsets.all(double.infinity),
                       child: SizedBox(
-                        width: viewportSize.width,
-                        height: viewportSize.height,
+                        width: _sceneSize.width,
+                        height: _sceneSize.height,
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
@@ -764,6 +1405,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                   color: widget.gridColor,
                                   spacing: widget.gridSpacing,
                                   variant: widget.backgroundVariant,
+                                  sceneOrigin: _sceneOrigin,
                                 ),
                               ),
                             ),
@@ -771,7 +1413,9 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                 _selectionBoxEnd != null)
                               Positioned.fromRect(
                                 rect: Rect.fromPoints(
-                                    _selectionBoxStart!, _selectionBoxEnd!),
+                                  _selectionBoxStart! + _sceneOffset,
+                                  _selectionBoxEnd! + _sceneOffset,
+                                ),
                                 child: IgnorePointer(
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
@@ -780,6 +1424,32 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                       border: Border.all(
                                           color: widget.connectionColor),
                                     ),
+                                  ),
+                                ),
+                              ),
+                            if (verticalGuide != null)
+                              Positioned(
+                                left: verticalGuide + _sceneOffset.dx - 0.5,
+                                top: 0,
+                                bottom: 0,
+                                width: 1,
+                                child: IgnorePointer(
+                                  child: ColoredBox(
+                                    color: widget.connectionColor
+                                        .withValues(alpha: 0.9),
+                                  ),
+                                ),
+                              ),
+                            if (horizontalGuide != null)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                top: horizontalGuide + _sceneOffset.dy - 0.5,
+                                height: 1,
+                                child: IgnorePointer(
+                                  child: ColoredBox(
+                                    color: widget.connectionColor
+                                        .withValues(alpha: 0.9),
                                   ),
                                 ),
                               ),
@@ -798,6 +1468,8 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                     previewTarget: _connectionPoint,
                                     previewColor: widget.connectionColor,
                                     animation: _animationController,
+                                    geometryCache: _edgeGeometryCache,
+                                    sceneOffset: _sceneOffset,
                                   ),
                                 ),
                               ),
@@ -825,20 +1497,18 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                   edge.label != null &&
                                   widget.edgeLabelBuilder != null)
                                 _buildCustomEdgeLabel(edge, nodesById),
-                            for (final edge in orderedEdges)
-                              if (!edge.hidden &&
-                                  _edgeInViewport(edge, nodesById) &&
-                                  edge.reconnectable &&
-                                  _selectedEdges.contains(edge.id)) ...[
-                                if (edge.canReconnectSource)
-                                  if (FlowGeometry.edgeSource(edge, nodesById)
-                                      case final source?)
-                                    _buildReconnectHandle(edge, true, source),
-                                if (edge.canReconnectTarget)
-                                  if (FlowGeometry.edgeTarget(edge, nodesById)
-                                      case final target?)
-                                    _buildReconnectHandle(edge, false, target),
-                              ],
+                            if (widget.edgeControlPointsEditable)
+                              for (final edge in orderedEdges)
+                                if (_selectedEdges.contains(edge.id) &&
+                                    _edgeInViewport(edge, nodesById))
+                                  for (var pointIndex = 0;
+                                      pointIndex < edge.controlPoints.length;
+                                      pointIndex++)
+                                    _buildEdgeControlPoint(
+                                      edge,
+                                      pointIndex,
+                                      edge.controlPoints[pointIndex],
+                                    ),
                             for (var index = 0;
                                 index < orderedEdges.length;
                                 index++)
@@ -855,6 +1525,20 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                 index < visibleNodes.length;
                                 index++)
                               _buildNode(visibleNodes[index], nodesById, index),
+                            for (final edge in orderedEdges)
+                              if (!edge.hidden &&
+                                  _edgeInViewport(edge, nodesById) &&
+                                  edge.reconnectable &&
+                                  _selectedEdges.contains(edge.id)) ...[
+                                if (edge.canReconnectSource)
+                                  if (FlowGeometry.edgeSource(edge, nodesById)
+                                      case final source?)
+                                    _buildReconnectHandle(edge, true, source),
+                                if (edge.canReconnectTarget)
+                                  if (FlowGeometry.edgeTarget(edge, nodesById)
+                                      case final target?)
+                                    _buildReconnectHandle(edge, false, target),
+                              ],
                             if (widget.nodeToolbarBuilder != null)
                               for (final node in visibleNodes)
                                 if (_selectedNodes.contains(node.id))
@@ -867,8 +1551,10 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                 if (_selectedEdges.contains(edge.id) &&
                                     _edgeInViewport(edge, nodesById))
                                   _toolbarAt(
-                                    FlowGeometry.edgePathFor(edge, nodesById)
-                                        .getBounds(),
+                                    _edgeGeometryCache
+                                            .result(edge, nodesById)
+                                            ?.bounds ??
+                                        Rect.zero,
                                     widget.edgeToolbarBuilder!(context, edge),
                                   ),
                             Positioned(

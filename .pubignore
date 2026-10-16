@@ -1,0 +1,9 @@
+FFlow_完整改进计划_2026-10.md
+FFlow_拖拽稳定性专项改造_Plan.md
+benchmark/*_test.dart
+benchmark/results.json
+build/
+example/build/
+example/android/
+example/ios/
+*.iml

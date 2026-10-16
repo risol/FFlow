@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import 'flow_handle.dart';
 
+const Object _flowNodeUnset = Object();
+
 /// A node placed on an [FFlowCanvas].
 ///
 /// [data] is owned by the application and can hold any immutable value used by
@@ -40,6 +42,7 @@ class FlowNode<T> {
     this.dragHandleOnly = false,
     this.autoMeasure = false,
     this.zIndex = 0,
+    this.groupable = false,
   })  : assert(minWidth > 0 && maxWidth >= minWidth),
         assert(minHeight > 0 && maxHeight >= minHeight);
 
@@ -95,6 +98,10 @@ class FlowNode<T> {
   /// Paint order within the same parent layer. Higher values paint on top.
   final int zIndex;
 
+  /// Allow dynamic reparenting to place nodes inside this node when enabled
+  /// on the canvas.
+  final bool groupable;
+
   /// Returns explicitly declared handles, or the default left/right handles.
   List<FlowHandle> get resolvedHandles {
     if (handles.isNotEmpty) return handles;
@@ -119,7 +126,7 @@ class FlowNode<T> {
     String? id,
     String? type,
     Offset? position,
-    T? data,
+    Object? data = _flowNodeUnset,
     double? width,
     double? height,
     bool? hasInput,
@@ -132,10 +139,10 @@ class FlowNode<T> {
     bool? connectable,
     bool? hidden,
     bool? selected,
-    String? parentId,
+    Object? parentId = _flowNodeUnset,
     bool clearParentId = false,
     Offset? origin,
-    Rect? extent,
+    Object? extent = _flowNodeUnset,
     bool clearExtent = false,
     bool? extentToParent,
     bool? expandParent,
@@ -143,17 +150,18 @@ class FlowNode<T> {
     double? minHeight,
     double? maxWidth,
     double? maxHeight,
-    String? ariaLabel,
+    Object? ariaLabel = _flowNodeUnset,
     bool? focusable,
     bool? dragHandleOnly,
     bool? autoMeasure,
     int? zIndex,
+    bool? groupable,
   }) =>
       FlowNode<T>(
         id: id ?? this.id,
         type: type ?? this.type,
         position: position ?? this.position,
-        data: data ?? this.data,
+        data: identical(data, _flowNodeUnset) ? this.data : data as T,
         width: width ?? this.width,
         height: height ?? this.height,
         hasInput: hasInput ?? this.hasInput,
@@ -166,19 +174,30 @@ class FlowNode<T> {
         connectable: connectable ?? this.connectable,
         hidden: hidden ?? this.hidden,
         selected: selected ?? this.selected,
-        parentId: clearParentId ? null : parentId ?? this.parentId,
+        parentId: clearParentId
+            ? null
+            : identical(parentId, _flowNodeUnset)
+                ? this.parentId
+                : parentId as String?,
         origin: origin ?? this.origin,
-        extent: clearExtent ? null : extent ?? this.extent,
+        extent: clearExtent
+            ? null
+            : identical(extent, _flowNodeUnset)
+                ? this.extent
+                : extent as Rect?,
         extentToParent: extentToParent ?? this.extentToParent,
         expandParent: expandParent ?? this.expandParent,
         minWidth: minWidth ?? this.minWidth,
         minHeight: minHeight ?? this.minHeight,
         maxWidth: maxWidth ?? this.maxWidth,
         maxHeight: maxHeight ?? this.maxHeight,
-        ariaLabel: ariaLabel ?? this.ariaLabel,
+        ariaLabel: identical(ariaLabel, _flowNodeUnset)
+            ? this.ariaLabel
+            : ariaLabel as String?,
         focusable: focusable ?? this.focusable,
         dragHandleOnly: dragHandleOnly ?? this.dragHandleOnly,
         autoMeasure: autoMeasure ?? this.autoMeasure,
         zIndex: zIndex ?? this.zIndex,
+        groupable: groupable ?? this.groupable,
       );
 }

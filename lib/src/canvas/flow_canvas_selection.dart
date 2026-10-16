@@ -64,7 +64,7 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
     return widget.multiSelectionKeyCodes.any(keys.contains);
   }
 
-  void _handleKey(FocusNode node, KeyEvent event) {
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     final selectionKey = widget.selectionKeyCodes.contains(event.logicalKey);
     if (selectionKey && event is KeyDownEvent && !_selectionKeyPressed) {
       _selectionKeyPressed = true;
@@ -73,29 +73,125 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
       _selectionKeyPressed = false;
       _rebuild(() {});
     }
-    if (event is! KeyDownEvent) return;
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final focusedWidget = FocusManager.instance.primaryFocus?.context?.widget;
-    if (focusedWidget is EditableText || focusedWidget is TextField) return;
+    if (focusedWidget is EditableText || focusedWidget is TextField) {
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     final keys = HardwareKeyboard.instance.logicalKeysPressed;
     final modifier = widget.multiSelectionKeyCodes.any(keys.contains);
-    if (key == LogicalKeyboardKey.escape) {
-      _clearSelection();
-    } else if (widget.deleteKeyCodes.contains(key)) {
+    final shift = keys.any((key) =>
+        key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight);
+    final history = widget.historyController;
+    if (modifier && key == LogicalKeyboardKey.keyZ) {
+      final state = shift ? history?.redo() : history?.undo();
+      if (state == null) return KeyEventResult.ignored;
+      _applyHistoryState(state);
+      return KeyEventResult.handled;
+    }
+    if (modifier && key == LogicalKeyboardKey.keyY) {
+      final state = history?.redo();
+      if (state == null) return KeyEventResult.ignored;
+      _applyHistoryState(state);
+      return KeyEventResult.handled;
+    }
+    if (modifier && key == LogicalKeyboardKey.keyC) {
+      final clipboard = widget.clipboard;
+      if (clipboard == null) return KeyEventResult.ignored;
+      clipboard.copy(
+        nodes: _nodes,
+        edges: _edges,
+        selectedNodeIds: _selectedNodes,
+      );
+      return KeyEventResult.handled;
+    }
+    if (modifier && key == LogicalKeyboardKey.keyX) {
+      final clipboard = widget.clipboard;
+      if (clipboard == null || _selectedNodes.isEmpty) {
+        return KeyEventResult.ignored;
+      }
+      clipboard.copy(
+        nodes: _nodes,
+        edges: _edges,
+        selectedNodeIds: _selectedNodes,
+      );
       _deleteSelection();
+      return KeyEventResult.handled;
+    }
+    if (modifier && key == LogicalKeyboardKey.keyV) {
+      final clipboard = widget.clipboard;
+      final createId = widget.createId;
+      if (clipboard == null || createId == null || !clipboard.isNotEmpty) {
+        return KeyEventResult.ignored;
+      }
+      final result = clipboard.paste(
+        nodes: _nodes,
+        edges: _edges,
+        createId: createId,
+        offset: widget.clipboardPasteOffset,
+      );
+      if (result.pastedNodes.isEmpty) return KeyEventResult.handled;
+      _nodes = result.nodes;
+      _edges = result.edges;
+      _selectedNodes
+        ..clear()
+        ..addAll(result.pastedNodes.map((node) => node.id));
+      _selectedEdges
+        ..clear()
+        ..addAll(result.pastedEdges.map((edge) => edge.id));
+      _publishGraph(nodesChanged: true, edgesChanged: true);
+      _rebuild(() {});
+      widget.onSelectionChanged?.call(_selection);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      if (_selection.isEmpty && _connectionGestureStart == null) {
+        return KeyEventResult.ignored;
+      }
+      _clearSelection();
+      if (_connectionGestureStart != null) _cancelConnection();
+      return KeyEventResult.handled;
+    } else if (widget.deleteKeyCodes.contains(key)) {
+      final selected = _selection;
+      if (!selected.nodes.any(
+              (id) => _nodes.any((node) => node.id == id && node.deletable)) &&
+          !selected.edges.any(
+              (id) => _edges.any((edge) => edge.id == id && edge.deletable))) {
+        return KeyEventResult.ignored;
+      }
+      _deleteSelection();
+      return KeyEventResult.handled;
     } else if (modifier && key == LogicalKeyboardKey.keyA) {
+      final nodesById = {for (final node in _nodes) node.id: node};
       _rebuild(() {
         _selectedNodes
           ..clear()
-          ..addAll(
-              _nodes.where((node) => node.selectable).map((node) => node.id));
+          ..addAll(_nodes
+              .where((node) =>
+                  node.selectable &&
+                  (widget.selectAllIncludesHidden ||
+                      FlowGeometry.isVisible(node, nodesById)))
+              .map((node) => node.id));
         _selectedEdges
           ..clear()
-          ..addAll(
-              _edges.where((edge) => edge.selectable).map((edge) => edge.id));
+          ..addAll(_edges.where((edge) {
+            if (!edge.selectable) return false;
+            if (widget.selectAllIncludesHidden) return true;
+            final source = nodesById[edge.sourceId];
+            final target = nodesById[edge.targetId];
+            return !edge.hidden &&
+                source != null &&
+                target != null &&
+                FlowGeometry.isVisible(source, nodesById) &&
+                FlowGeometry.isVisible(target, nodesById);
+          }).map((edge) => edge.id));
       });
       _emitSelection();
+      return KeyEventResult.handled;
     }
+    return KeyEventResult.ignored;
   }
 
   KeyEventResult _handleNodeKey(FlowNode<T> node, KeyEvent event) {
@@ -157,9 +253,9 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
     final node = nodesById[nodeId];
     if (node == null) return;
     final rect = FlowGeometry.nodeRect(node, nodesById);
-    final topLeft = _transformController.toScene(Offset.zero);
-    final bottomRight = _transformController
-        .toScene(Offset(_viewportSize.width, _viewportSize.height));
+    final topLeft = _screenToFlow(Offset.zero);
+    final bottomRight =
+        _screenToFlow(Offset(_viewportSize.width, _viewportSize.height));
     final viewport = Rect.fromPoints(topLeft, bottomRight);
     if (!viewport.contains(rect.topLeft) ||
         !viewport.contains(rect.bottomRight)) {
@@ -169,9 +265,9 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
 
   void _keepPointInView(Offset point) {
     if (_viewportSize.isEmpty) return;
-    final topLeft = _transformController.toScene(Offset.zero);
-    final bottomRight = _transformController
-        .toScene(Offset(_viewportSize.width, _viewportSize.height));
+    final topLeft = _screenToFlow(Offset.zero);
+    final bottomRight =
+        _screenToFlow(Offset(_viewportSize.width, _viewportSize.height));
     if (Rect.fromPoints(topLeft, bottomRight).contains(point)) return;
     final scale = _transformController.value.getMaxScaleOnAxis();
     final center = Offset(_viewportSize.width / 2, _viewportSize.height / 2);
@@ -208,38 +304,22 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
   }
 
   void _deleteSelection() {
-    final deletableNodes = _nodes
-        .where((node) => _selectedNodes.contains(node.id) && node.deletable)
-        .map((node) => node.id)
-        .toSet();
-    final deletableEdges = _edges
-        .where((edge) => _selectedEdges.contains(edge.id) && edge.deletable)
-        .map((edge) => edge.id)
-        .toSet();
-    if (deletableNodes.isEmpty && deletableEdges.isEmpty) return;
-    final deleting =
-        FlowSelection(nodes: deletableNodes, edges: deletableEdges);
+    final result = FlowGraphUtils.deleteElements(
+      nodes: _nodes,
+      edges: _edges,
+      nodeIds: _selectedNodes,
+      edgeIds: _selectedEdges,
+    );
+    if (result.deletedNodes.isEmpty && result.deletedEdges.isEmpty) return;
+    final deleting = FlowSelection(
+      nodes: result.deletedNodes.map((node) => node.id),
+      edges: result.deletedEdges.map((edge) => edge.id),
+    );
     if (widget.onBeforeDelete?.call(deleting) == false) return;
-    final nodesById = {for (final node in _nodes) node.id: node};
-    _nodes = List.unmodifiable([
-      for (final node in _nodes)
-        if (!deletableNodes.contains(node.id))
-          if (node.parentId != null && deletableNodes.contains(node.parentId))
-            node.copyWith(
-              position: FlowGeometry.absolutePosition(node, nodesById) +
-                  Offset(node.width * node.origin.dx,
-                      node.height * node.origin.dy),
-              clearParentId: true,
-            )
-          else
-            node,
-    ]);
-    _edges = List.unmodifiable(_edges.where((edge) =>
-        !deletableEdges.contains(edge.id) &&
-        !deletableNodes.contains(edge.sourceId) &&
-        !deletableNodes.contains(edge.targetId)));
-    _selectedNodes.removeAll(deletableNodes);
-    _selectedEdges.removeAll(deletableEdges);
+    _nodes = result.nodes;
+    _edges = result.edges;
+    _selectedNodes.removeAll(deleting.nodes);
+    _selectedEdges.removeAll(deleting.edges);
     _rebuild(() {});
     _emitSelection();
     widget.onDelete?.call(deleting);
