@@ -17,6 +17,20 @@ extension DemoNodeKindPresentation on DemoNodeKind {
         DemoNodeKind.output => 'Output',
       };
 
+  String get defaultTitle => switch (this) {
+        DemoNodeKind.trigger => 'New workflow request',
+        DemoNodeKind.ai => 'Process with AI',
+        DemoNodeKind.review => 'Review and approve',
+        DemoNodeKind.output => 'Send results',
+      };
+
+  String get defaultDescription => switch (this) {
+        DemoNodeKind.trigger => 'Starts when a new request arrives',
+        DemoNodeKind.ai => 'Transform the incoming information',
+        DemoNodeKind.review => 'Approve the result before continuing',
+        DemoNodeKind.output => 'Deliver the approved result',
+      };
+
   IconData get icon => switch (this) {
         DemoNodeKind.trigger => Icons.bolt_rounded,
         DemoNodeKind.ai => Icons.auto_awesome_rounded,
@@ -39,4 +53,25 @@ class DemoNodeData {
   final String title;
   final String description;
   final DemoNodeKind kind;
+
+  DemoNodeData copyWith({String? title, String? description}) => DemoNodeData(
+        title: title ?? this.title,
+        description: description ?? this.description,
+        kind: kind,
+      );
+
+  Map<String, Object?> toJson() => {
+        'title': title,
+        'description': description,
+        'kind': kind.name,
+      };
+
+  factory DemoNodeData.fromJson(Object? value) {
+    final json = value! as Map<String, Object?>;
+    return DemoNodeData(
+      title: json['title'] as String? ?? 'Workflow step',
+      description: json['description'] as String? ?? '',
+      kind: DemoNodeKind.values.byName(json['kind'] as String? ?? 'ai'),
+    );
+  }
 }

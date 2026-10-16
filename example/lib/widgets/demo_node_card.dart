@@ -4,10 +4,22 @@ import 'package:fflow/fflow.dart';
 import '../models/demo_node_data.dart';
 
 class DemoNodeCard extends StatelessWidget {
-  const DemoNodeCard({super.key, required this.node, required this.selected});
+  const DemoNodeCard({
+    super.key,
+    required this.node,
+    required this.selected,
+    required this.onDuplicate,
+    required this.onDelete,
+    this.running = false,
+    this.completed = false,
+  });
 
   final FlowNode<DemoNodeData> node;
   final bool selected;
+  final VoidCallback onDuplicate;
+  final VoidCallback onDelete;
+  final bool running;
+  final bool completed;
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +42,11 @@ class DemoNodeCard extends StatelessWidget {
               color: Colors.black.withValues(alpha: 0.28),
               blurRadius: 24,
               offset: const Offset(0, 10)),
+          if (running)
+            BoxShadow(
+                color: accent.withValues(alpha: 0.2),
+                blurRadius: 20,
+                spreadRadius: 1),
           if (selected)
             BoxShadow(
                 color: accent.withValues(alpha: 0.12),
@@ -63,8 +80,52 @@ class DemoNodeCard extends StatelessWidget {
                       letterSpacing: 1.15),
                 ),
               ),
-              Icon(Icons.more_horiz_rounded,
-                  size: 18, color: Colors.white.withValues(alpha: 0.42)),
+              if (running)
+                SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.7,
+                    color: accent,
+                  ),
+                )
+              else if (completed)
+                const Icon(Icons.check_circle_rounded,
+                    size: 17, color: Color(0xFF5CC6A4))
+              else
+                PopupMenuButton<String>(
+                  tooltip: 'Node actions',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 30,
+                    height: 30,
+                  ),
+                  iconSize: 18,
+                  icon: Icon(Icons.more_horiz_rounded,
+                      color: Colors.white.withValues(alpha: 0.52)),
+                  color: const Color(0xFF202532),
+                  onSelected: (action) {
+                    if (action == 'duplicate') onDuplicate();
+                    if (action == 'delete') onDelete();
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'duplicate',
+                      child: _NodeMenuItem(
+                        icon: Icons.copy_rounded,
+                        label: 'Duplicate',
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: _NodeMenuItem(
+                        icon: Icons.delete_outline_rounded,
+                        label: 'Delete',
+                        danger: true,
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 11),
@@ -85,4 +146,33 @@ class DemoNodeCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NodeMenuItem extends StatelessWidget {
+  const _NodeMenuItem({
+    required this.icon,
+    required this.label,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Icon(icon,
+              size: 15,
+              color:
+                  danger ? const Color(0xFFE98C91) : const Color(0xFFB6BECC)),
+          const SizedBox(width: 9),
+          Text(label,
+              style: TextStyle(
+                color:
+                    danger ? const Color(0xFFE98C91) : const Color(0xFFE2E5EC),
+                fontSize: 11,
+              )),
+        ],
+      );
 }
