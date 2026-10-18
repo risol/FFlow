@@ -55,11 +55,51 @@ jobs:
       - run: cd example && flutter build linux --release
       - name: Run example app integration test
         run: cd example && xvfb-run -a flutter test integration_test/fflow_editor_test.dart -d linux
+      - name: Archive Linux example bundle
+        if: success() && github.event_name != 'pull_request'
+        run: tar -czf fflow-linux.tar.gz -C example/build/linux/x64/release bundle
       - name: Upload Linux example bundle
         if: success() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: fflow-linux-${{ github.sha }}
-          path: example/build/linux/x64/release/bundle/
+          path: fflow-linux.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-desktop:
+    # Windows and macOS hosted runners use more of the free allowance than Linux.
+    # Keep these builds off pull requests; master pushes and manual runs still produce artifacts.
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            platform: windows
+            artifact_path: example/build/windows/x64/runner/Release/
+          - os: macos-15
+            platform: macos
+            artifact_path: fflow-macos.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cd example && flutter pub get && flutter build ${{ matrix.platform }} --release
+      - name: Archive macOS app bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          cd example/build/macos/Build/Products/Release
+          tar -czf "$GITHUB_WORKSPACE/fflow-macos.tar.gz" -- *.app
+      - name: Upload ${{ matrix.platform }} example bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: fflow-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ matrix.artifact_path }}
           if-no-files-found: error
           retention-days: 7
