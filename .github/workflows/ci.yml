@@ -55,3 +55,11 @@ jobs:
       - run: cd example && flutter build linux --release
       - name: Run example app integration test
         run: cd example && xvfb-run -a flutter test integration_test/fflow_editor_test.dart -d linux
+      - name: Upload Linux example bundle
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: fflow-linux-${{ github.sha }}
+          path: example/build/linux/x64/release/bundle/
+          if-no-files-found: error
+          retention-days: 7
