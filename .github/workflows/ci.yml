@@ -10,7 +10,7 @@ jobs:
   package:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -21,21 +21,21 @@ jobs:
       - run: flutter test --coverage
       - name: Upload unit test coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-unit-coverage
           path: coverage/lcov.info
           if-no-files-found: ignore
       - name: Upload test failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-test-failures
           path: test/failures/**
           if-no-files-found: ignore
       - run: flutter pub publish --dry-run
       - run: flutter test benchmark/large_graph_benchmark_test.dart --reporter expanded
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: large-graph-benchmark
           path: benchmark/results.json
@@ -43,7 +43,7 @@ jobs:
   build-smoke:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
