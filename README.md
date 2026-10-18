@@ -1,8 +1,18 @@
 # FFlow
 
-FFlow is a reusable Flutter SDK for building interactive node and edge editors. The root package contains the public API and canvas implementation. The runnable workflow editor is an example app under [`example/`](example/).
+FFlow is a Flutter SDK for building interactive, node-based editors. Use it to create workflow builders, visual automation tools, data pipelines, state machines, and other graph interfaces that fit the rest of your Flutter app.
+
+The SDK provides the graph canvas, node and edge models, editing interactions, viewport navigation, and reusable controls. Your app defines the node data and UI, applies domain-specific validation, and decides what running a workflow means. Keep graph state in your own widgets with change callbacks, or use `FlowGraphController` when you want observable graph state and indexed queries. FFlow is Flutter-native and has no third-party runtime dependencies.
+
+This repository contains the SDK package at its root and a runnable workflow editor in [`example/`](example/). The example demonstrates a four-step research workflow, with a node library, draggable canvas, connectable handles, overview minimap, and editor actions.
 
 ![FFlow workflow editor example](doc/images/fflow-workflow-editor.png)
+
+*The example editor shows a trigger, AI step, human review, and output connected on a navigable canvas.*
+
+## How FFlow fits into an app
+
+FFlow handles the graph-editing surface while your app owns the meaning of the graph. A typical integration defines typed data for each node, maps that data to custom Flutter widgets, and then updates graph state in response to canvas changes. You can keep state in your widget tree with controlled `nodes` and `edges`, or move it into `FlowGraphController`. Add history, clipboard, snapshots, layouts, or routing as your editor needs them.
 
 ## Add FFlow to an app
 
@@ -20,7 +30,7 @@ Then import the public library:
 import 'package:fflow/fflow.dart';
 ```
 
-Create typed node data in your application and provide a builder for each node:
+Create typed node data in your application and provide a builder for each node. The canvas reports graph changes through callbacks, so the host app remains responsible for storing the updated state:
 
 ```dart
 FFlowCanvas<MyNodeData>(
