@@ -18,6 +18,10 @@ export 'src/interactions/flow_interaction_session.dart'
     show FlowInteractionKind, FlowInteractionSession;
 export 'src/interactions/flow_pointer_capture.dart' show FlowPointerCapture;
 export 'src/interactions/flow_extension_adapters.dart';
+export 'src/interactions/flow_layered_layout.dart';
+export 'src/interactions/flow_force_layout.dart';
+export 'src/interactions/flow_orthogonal_edge_router.dart';
+export 'src/interactions/flow_graph_routing.dart';
 export 'src/models/flow_connection.dart';
 export 'src/models/flow_edge.dart';
 export 'src/models/flow_events.dart';

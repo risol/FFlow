@@ -116,6 +116,7 @@ extension _FlowCanvasChanges<T> on _FFlowCanvasState<T> {
       a.id == b.id &&
       a.type == b.type &&
       a.data == b.data &&
+      a.expandedSize == b.expandedSize &&
       _sameHandles(a.handles, b.handles) &&
       a.hasInput == b.hasInput &&
       a.hasOutput == b.hasOutput &&
@@ -125,6 +126,7 @@ extension _FlowCanvasChanges<T> on _FFlowCanvasState<T> {
       a.deletable == b.deletable &&
       a.connectable == b.connectable &&
       a.hidden == b.hidden &&
+      a.collapsed == b.collapsed &&
       a.parentId == b.parentId &&
       a.origin == b.origin &&
       a.extent == b.extent &&

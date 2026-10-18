@@ -40,6 +40,12 @@ class FlowGraphSnapshot<T> {
               'data': encodeNodeData(node.data),
               'width': node.width,
               'height': node.height,
+              'expandedSize': node.expandedSize == null
+                  ? null
+                  : {
+                      'width': node.expandedSize!.width,
+                      'height': node.expandedSize!.height,
+                    },
               'hasInput': node.hasInput,
               'hasOutput': node.hasOutput,
               'handles': [
@@ -61,6 +67,7 @@ class FlowGraphSnapshot<T> {
               'deletable': node.deletable,
               'connectable': node.connectable,
               'hidden': node.hidden,
+              'collapsed': node.collapsed,
               if (includeSelection) 'selected': node.selected,
               'parentId': node.parentId,
               'origin': {'x': node.origin.dx, 'y': node.origin.dy},
@@ -143,6 +150,7 @@ class FlowGraphSnapshot<T> {
       final position = map['position'] as Map<String, Object?>? ?? const {};
       final origin = map['origin'] as Map<String, Object?>?;
       final extent = map['extent'] as Map<String, Object?>?;
+      final expandedSize = map['expandedSize'] as Map<String, Object?>?;
       final handles =
           (map['handles'] as List<Object?>? ?? const []).map((entry) {
         final handle = entry! as Map<String, Object?>;
@@ -168,6 +176,12 @@ class FlowGraphSnapshot<T> {
         data: decodeNodeData(map['data']),
         width: (map['width'] as num? ?? 240).toDouble(),
         height: (map['height'] as num? ?? 126).toDouble(),
+        expandedSize: expandedSize == null
+            ? null
+            : Size(
+                (expandedSize['width'] as num).toDouble(),
+                (expandedSize['height'] as num).toDouble(),
+              ),
         hasInput: map['hasInput'] as bool? ?? true,
         hasOutput: map['hasOutput'] as bool? ?? true,
         handles: handles,
@@ -177,6 +191,7 @@ class FlowGraphSnapshot<T> {
         deletable: map['deletable'] as bool? ?? true,
         connectable: map['connectable'] as bool? ?? true,
         hidden: map['hidden'] as bool? ?? false,
+        collapsed: map['collapsed'] as bool? ?? false,
         selected: map['selected'] as bool? ?? false,
         parentId: map['parentId'] as String?,
         origin: origin == null

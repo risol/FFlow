@@ -42,11 +42,12 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
   }
 
   List<FlowEdge> _orderedVisibleEdges() {
+    final nodesById = _graphIndex.nodesById;
     final order = {
       for (var index = 0; index < _edges.length; index++)
         _edges[index].id: index,
     };
-    return List<FlowEdge>.of(_edges)
+    return _edges.where((edge) => _edgeIsVisible(edge, nodesById)).toList()
       ..sort((first, second) {
         if (first.zIndex != second.zIndex) {
           return first.zIndex.compareTo(second.zIndex);
@@ -58,6 +59,20 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
         }
         return order[first.id]!.compareTo(order[second.id]!);
       });
+  }
+
+  bool _edgeIsVisible(
+    FlowEdge edge, [
+    Map<String, FlowNode<T>>? nodesById,
+  ]) {
+    if (edge.hidden) return false;
+    final nodes = nodesById ?? _graphIndex.nodesById;
+    final source = nodes[edge.sourceId];
+    final target = nodes[edge.targetId];
+    return source != null &&
+        target != null &&
+        FlowGeometry.isVisible(source, nodes) &&
+        FlowGeometry.isVisible(target, nodes);
   }
 
   Widget _buildNode(

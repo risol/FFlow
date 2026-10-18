@@ -14,10 +14,13 @@ class FlowCanvasController extends TransformationController {
   int _viewportAnimationRevision = 0;
 
   FlowViewport get viewport => FlowViewport(
-        x: value.entry(0, 3) - value.getMaxScaleOnAxis() * _sceneOrigin.dx,
-        y: value.entry(1, 3) - value.getMaxScaleOnAxis() * _sceneOrigin.dy,
-        zoom: value.getMaxScaleOnAxis(),
+        x: value.entry(0, 3) - _zoom * _sceneOrigin.dx,
+        y: value.entry(1, 3) - _zoom * _sceneOrigin.dy,
+        zoom: _zoom,
       );
+
+  // The canvas keeps z scale at 1, so read the 2D x scale directly.
+  double get _zoom => value.entry(0, 0).abs();
 
   /// The canvas updates this size during layout so zoom helpers can keep the
   /// visible center fixed when no focal point is supplied.
@@ -98,7 +101,7 @@ class FlowCanvasController extends TransformationController {
     double minZoom = 0.25,
     double maxZoom = 2,
   }) {
-    final current = value.getMaxScaleOnAxis();
+    final current = _zoom;
     zoomTo(
       current * factor,
       focalPoint: focalPoint,
@@ -120,7 +123,7 @@ class FlowCanvasController extends TransformationController {
     double maxZoom = 2,
   }) {
     _viewportAnimationRevision++;
-    final current = value.getMaxScaleOnAxis();
+    final current = _zoom;
     final next = zoom.clamp(minZoom, maxZoom).toDouble();
     final factor = next / current;
     final focal = focalPoint ??
@@ -140,7 +143,7 @@ class FlowCanvasController extends TransformationController {
 
   void centerAt(Offset scenePoint, Size viewportSize, {double? zoom}) {
     _viewportAnimationRevision++;
-    final scale = zoom ?? value.getMaxScaleOnAxis();
+    final scale = zoom ?? _zoom;
     final center = Offset(viewportSize.width / 2, viewportSize.height / 2);
     final translation = center - (scenePoint - _sceneOrigin) * scale;
     value = Matrix4.identity()

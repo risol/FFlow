@@ -256,7 +256,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
   FlowHitTestResult _hitTestAt(Offset flowPosition) {
     final nodesById = _graphIndex.nodesById;
     final regions = <FlowHitTestRegion>[];
-    final scale = _transformController.value.getMaxScaleOnAxis();
+    final scale = _flowScaleOf(_transformController.value);
 
     // Reconnect handles paint after every node, so they are the topmost graph
     // targets even where their endpoint overlaps node content. Query only edge
@@ -273,7 +273,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
       if (edge == null) continue;
       if (!edge.reconnectable ||
           !_selectedEdges.contains(edge.id) ||
-          edge.hidden ||
+          !_edgeIsVisible(edge, nodesById) ||
           !_edgeInViewport(edge, nodesById)) {
         continue;
       }
@@ -383,7 +383,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
       final rank = _edgePaintRanks[edgeId];
       if (edge == null ||
           rank == null ||
-          edge.hidden ||
+          !_edgeIsVisible(edge, nodesById) ||
           !_edgeInViewport(edge, nodesById)) {
         continue;
       }
@@ -523,7 +523,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
             : box.overlaps(rect);
       }).map((node) => node.id));
       selectedEdges.addAll(_edges.where((edge) {
-        if (!edge.selectable || edge.hidden) return false;
+        if (!edge.selectable || !_edgeIsVisible(edge, nodesById)) return false;
         final geometry = _edgeGeometryCache.result(edge, nodesById);
         if (geometry == null) return false;
         if (widget.edgeSelectionMode == FlowSelectionMode.full) {
@@ -690,7 +690,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
           movingBounds,
           targetBounds,
           threshold: widget.helperLineThreshold /
-              _transformController.value.getMaxScaleOnAxis(),
+              _flowScaleOf(_transformController.value),
         );
         _alignmentGuides = guides;
         if (widget.helperLineSnap && guides.correction != Offset.zero) {
@@ -856,7 +856,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
   void _emitProximityConnection(FlowNode<T> node) {
     final nodesById = {for (final item in _nodes) item.id: item};
     final threshold = widget.proximityConnectThreshold /
-        _transformController.value.getMaxScaleOnAxis();
+        _flowScaleOf(_transformController.value);
     for (final handle in node.resolvedHandles) {
       if (handle.type != FlowHandleType.source) continue;
       final connection = FlowGraphInteraction.connectionAt<T>(

@@ -57,6 +57,10 @@ final Set<LogicalKeyboardKey> _defaultMultiSelectionKeyCodes =
   LogicalKeyboardKey.metaRight,
 ]);
 
+// FFlow uses uniform x/y scaling while leaving the matrix z scale at 1.
+// getMaxScaleOnAxis would therefore report 1 for zoom values below 1.
+double _flowScaleOf(Matrix4 matrix) => matrix.entry(0, 0).abs();
+
 typedef FlowNodeBuilder<T> = Widget Function(
   BuildContext context,
   FlowNode<T> node,
@@ -885,6 +889,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
             node.data,
             node.width,
             node.height,
+            node.expandedSize,
             node.hasInput,
             node.hasOutput,
             Object.hashAll(node.handles),
@@ -894,6 +899,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
             node.deletable,
             node.connectable,
             node.hidden,
+            node.collapsed,
             node.parentId,
             node.origin,
             node.extent,
@@ -967,12 +973,12 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   void _handleTransformChanged() {
     if (_updatingSceneFrame) return;
     final matrix = _transformController.value;
-    final scale = matrix.getMaxScaleOnAxis();
+    final scale = _flowScaleOf(matrix);
     final effectiveX = matrix.entry(0, 3) - scale * _sceneOrigin.dx;
     final effectiveY = matrix.entry(1, 3) - scale * _sceneOrigin.dy;
     final extent = widget.translateExtent;
     if (!_clampingViewport && extent != null && !_viewportSize.isEmpty) {
-      final scale = matrix.getMaxScaleOnAxis();
+      final scale = _flowScaleOf(matrix);
       final minX = _viewportSize.width - extent.right * scale;
       final maxX = -extent.left * scale;
       final minY = _viewportSize.height - extent.bottom * scale;
@@ -1014,7 +1020,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
 
   FlowViewport _currentViewport() {
     final matrix = _transformController.value;
-    final scale = matrix.getMaxScaleOnAxis();
+    final scale = _flowScaleOf(matrix);
     return FlowViewport(
       x: matrix.entry(0, 3) - scale * _sceneOrigin.dx,
       y: matrix.entry(1, 3) - scale * _sceneOrigin.dy,
@@ -1130,6 +1136,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
         hitTestProperties,
         node.id,
         node.hidden,
+        node.collapsed,
       );
     }
     for (final edge in _edges) {
@@ -1225,7 +1232,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     if (nextOrigin == _sceneOrigin) return;
     final delta = nextOrigin - _sceneOrigin;
     final matrix = _transformController.value;
-    final scale = matrix.getMaxScaleOnAxis();
+    final scale = _flowScaleOf(matrix);
     _updatingSceneFrame = true;
     matrix
       ..setEntry(0, 3, matrix.entry(0, 3) + scale * delta.dx)
@@ -1270,7 +1277,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
 
   void _syncEdgeAnimation() {
     final hasAnimatedEdges =
-        _edges.any((edge) => edge.animated && !edge.hidden);
+        _edges.any((edge) => edge.animated && _edgeIsVisible(edge));
     if (hasAnimatedEdges && !_animationController.isAnimating) {
       _animationController.repeat();
     } else if (!hasAnimatedEdges && _animationController.isAnimating) {
@@ -1285,7 +1292,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     if (_hitTestIndexDirty) {
       _hitTestIndex.rebuild(
         nodes: _nodes.where((node) => FlowGeometry.isVisible(node, nodesById)),
-        edges: _edges.where((edge) => !edge.hidden),
+        edges: _edges.where(_edgeIsVisible),
         nodesById: nodesById,
         geometryCache: _edgeGeometryCache,
         nodeHitTestTolerance: widget.nodeHitTestTolerance,
@@ -1340,7 +1347,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
     }
 
     for (final edge in orderedEdges) {
-      if (edge.hidden || !_edgeInViewport(edge, nodesById)) continue;
+      if (!_edgeIsVisible(edge) || !_edgeInViewport(edge, nodesById)) continue;
       final builder = widget.edgeTypes[edge.customType ?? edge.type.name];
       if (builder == null) {
         (edge.animated ? pendingAnimatedEdges : pendingStaticEdges).add(edge);
@@ -1408,7 +1415,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                       onInteractionStart: (_) {
                         _beginCanvasPanInteraction();
                         _pinchStartZoom =
-                            _transformController.value.getMaxScaleOnAxis();
+                            _flowScaleOf(_transformController.value);
                         _viewportInteractionActive = true;
                         widget.onMoveStart?.call(_currentViewport());
                       },
@@ -1530,13 +1537,13 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                               ),
                             ),
                             for (final edge in orderedEdges)
-                              if (!edge.hidden &&
+                              if (_edgeIsVisible(edge) &&
                                   _edgeInViewport(edge, nodesById) &&
                                   edge.label != null &&
                                   widget.edgeLabelBuilder == null)
                                 _buildEdgeLabel(edge, nodesById),
                             for (final edge in orderedEdges)
-                              if (!edge.hidden &&
+                              if (_edgeIsVisible(edge) &&
                                   _edgeInViewport(edge, nodesById) &&
                                   edge.label != null &&
                                   widget.edgeLabelBuilder != null)
@@ -1570,7 +1577,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                                 index++)
                               _buildNode(visibleNodes[index], nodesById, index),
                             for (final edge in orderedEdges)
-                              if (!edge.hidden &&
+                              if (_edgeIsVisible(edge) &&
                                   _edgeInViewport(edge, nodesById) &&
                                   edge.reconnectable &&
                                   _selectedEdges.contains(edge.id)) ...[

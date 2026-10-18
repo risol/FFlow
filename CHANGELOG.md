@@ -2,6 +2,12 @@
 
 Notable changes to FFlow are recorded here. Entries stay under `Unreleased` until they are included in a versioned release.
 
+## Unreleased
+
+### Added
+
+- Built-in layered and force-directed layouts, animated layout transitions, incremental node placement, obstacle-aware orthogonal routing, collapsible groups, and example-editor controls for these features.
+
 ## 0.1.0
 
 ### Added

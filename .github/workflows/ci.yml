@@ -16,9 +16,16 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: dart format --set-exit-if-changed lib test benchmark example/lib
+      - run: dart format --set-exit-if-changed lib test benchmark example/lib example/integration_test
       - run: flutter analyze
-      - run: flutter test
+      - run: flutter test --coverage
+      - name: Upload unit test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-unit-coverage
+          path: coverage/lcov.info
+          if-no-files-found: ignore
       - name: Upload test failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
@@ -41,7 +48,10 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
       - run: flutter pub get
       - run: cd example && flutter pub get && flutter build web --release
+      - run: cd example && flutter analyze
       - run: cd example && flutter build linux --release
+      - name: Run example app integration test
+        run: cd example && xvfb-run -a flutter test integration_test/fflow_editor_test.dart -d linux

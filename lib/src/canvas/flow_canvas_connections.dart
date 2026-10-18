@@ -309,7 +309,7 @@ extension _FlowCanvasConnections<T> on _FFlowCanvasState<T> {
   }
 
   double get _sceneSnapRadius =>
-      widget.snapRadius / _transformController.value.getMaxScaleOnAxis();
+      widget.snapRadius / _flowScaleOf(_transformController.value);
 
   Offset? _scenePointFromGlobal(Offset globalPosition) {
     final renderObject = context.findRenderObject();

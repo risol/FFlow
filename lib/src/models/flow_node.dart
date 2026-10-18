@@ -18,6 +18,7 @@ class FlowNode<T> {
     this.type = 'default',
     this.width = 240,
     this.height = 126,
+    this.expandedSize,
     this.hasInput = true,
     this.hasOutput = true,
     this.handles = const [],
@@ -27,6 +28,7 @@ class FlowNode<T> {
     this.deletable = true,
     this.connectable = true,
     this.hidden = false,
+    this.collapsed = false,
     this.selected = false,
     this.parentId,
     this.origin = Offset.zero,
@@ -52,6 +54,9 @@ class FlowNode<T> {
   final T data;
   final double width;
   final double height;
+
+  /// Saved expanded dimensions while this group is collapsed.
+  final Size? expandedSize;
   final bool hasInput;
   final bool hasOutput;
   final List<FlowHandle> handles;
@@ -61,6 +66,9 @@ class FlowNode<T> {
   final bool deletable;
   final bool connectable;
   final bool hidden;
+
+  /// Hide all descendants while keeping their graph data and positions intact.
+  final bool collapsed;
   final bool selected;
   final String? parentId;
 
@@ -129,6 +137,8 @@ class FlowNode<T> {
     Object? data = _flowNodeUnset,
     double? width,
     double? height,
+    Object? expandedSize = _flowNodeUnset,
+    bool clearExpandedSize = false,
     bool? hasInput,
     bool? hasOutput,
     List<FlowHandle>? handles,
@@ -138,6 +148,7 @@ class FlowNode<T> {
     bool? deletable,
     bool? connectable,
     bool? hidden,
+    bool? collapsed,
     bool? selected,
     Object? parentId = _flowNodeUnset,
     bool clearParentId = false,
@@ -164,6 +175,11 @@ class FlowNode<T> {
         data: identical(data, _flowNodeUnset) ? this.data : data as T,
         width: width ?? this.width,
         height: height ?? this.height,
+        expandedSize: clearExpandedSize
+            ? null
+            : identical(expandedSize, _flowNodeUnset)
+                ? this.expandedSize
+                : expandedSize as Size?,
         hasInput: hasInput ?? this.hasInput,
         hasOutput: hasOutput ?? this.hasOutput,
         handles: handles ?? this.handles,
@@ -173,6 +189,7 @@ class FlowNode<T> {
         deletable: deletable ?? this.deletable,
         connectable: connectable ?? this.connectable,
         hidden: hidden ?? this.hidden,
+        collapsed: collapsed ?? this.collapsed,
         selected: selected ?? this.selected,
         parentId: clearParentId
             ? null

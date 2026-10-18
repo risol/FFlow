@@ -175,6 +175,7 @@ class FlowGraphController<T> extends ChangeNotifier {
             node.height,
             node.origin,
             node.parentId,
+            node.collapsed,
             Object.hashAll(node.resolvedHandles.map((handle) => Object.hash(
                   handle.id,
                   handle.type,
@@ -221,6 +222,70 @@ class FlowGraphController<T> extends ChangeNotifier {
           edge.copyWith(selected: selectedEdges.contains(edge.id)),
       ],
     );
+  }
+
+  /// Toggles a node's collapsed state and deselects descendants when hiding
+  /// them. Descendant positions and their own collapsed states are preserved.
+  bool toggleNodeCollapsed(String nodeId) {
+    final node = getNode(nodeId);
+    if (node == null) return false;
+    return setNodeCollapsed(nodeId, !node.collapsed);
+  }
+
+  /// Sets whether a node hides its descendants on the canvas.
+  bool setNodeCollapsed(String nodeId, bool collapsed) {
+    final node = getNode(nodeId);
+    if (node == null || node.collapsed == collapsed) return false;
+    final nodesById = _index.nodesById;
+    final hiddenDescendants = <String>{};
+    if (collapsed) {
+      for (final candidate in _nodes) {
+        var parentId = candidate.parentId;
+        final visited = <String>{candidate.id};
+        while (parentId != null && visited.add(parentId)) {
+          if (parentId == nodeId) {
+            hiddenDescendants.add(candidate.id);
+            break;
+          }
+          parentId = nodesById[parentId]?.parentId;
+        }
+      }
+    }
+    setGraph(
+      nodes: [
+        for (final current in _nodes)
+          current.copyWith(
+            collapsed: current.id == nodeId ? collapsed : current.collapsed,
+            width: current.id == nodeId
+                ? collapsed
+                    ? current.minWidth
+                    : current.expandedSize?.width ?? current.width
+                : null,
+            height: current.id == nodeId
+                ? collapsed
+                    ? current.minHeight
+                    : current.expandedSize?.height ?? current.height
+                : null,
+            expandedSize: current.id == nodeId && collapsed
+                ? current.expandedSize ?? Size(current.width, current.height)
+                : current.expandedSize,
+            clearExpandedSize: current.id == nodeId && !collapsed,
+            selected: hiddenDescendants.contains(current.id)
+                ? false
+                : current.selected,
+          ),
+      ],
+      edges: [
+        for (final edge in _edges)
+          edge.copyWith(
+            selected: hiddenDescendants.contains(edge.sourceId) ||
+                    hiddenDescendants.contains(edge.targetId)
+                ? false
+                : edge.selected,
+          ),
+      ],
+    );
+    return true;
   }
 
   void addNodes(Iterable<FlowNode<T>> nodes) {

@@ -48,7 +48,20 @@ class FFlowMiniMap<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bounds = FlowGeometry.nodesBounds(nodes);
+    final nodesById = {for (final node in nodes) node.id: node};
+    final visibleNodes = nodes
+        .where((node) => FlowGeometry.isVisible(node, nodesById))
+        .toList(growable: false);
+    final visibleEdges = edges.where((edge) {
+      final source = nodesById[edge.sourceId];
+      final target = nodesById[edge.targetId];
+      return !edge.hidden &&
+          source != null &&
+          target != null &&
+          FlowGeometry.isVisible(source, nodesById) &&
+          FlowGeometry.isVisible(target, nodesById);
+    }).toList(growable: false);
+    final bounds = FlowGeometry.nodesBounds(visibleNodes);
     return SizedBox(
       width: width,
       height: height,
@@ -87,8 +100,8 @@ class FFlowMiniMap<T> extends StatelessWidget {
                   onPanUpdate: (details) => navigate(details.localPosition),
                   child: CustomPaint(
                     painter: _MiniMapPainter<T>(
-                      nodes: nodes,
-                      edges: edges,
+                      nodes: visibleNodes,
+                      edges: visibleEdges,
                       bounds: bounds,
                       viewportRect: viewportRect,
                       transform: map,
@@ -187,7 +200,15 @@ class _MiniMapPainter<T> extends CustomPainter {
     );
     canvas.scale(transform.scale);
     for (final edge in edges) {
-      if (edge.hidden) continue;
+      final source = nodesById[edge.sourceId];
+      final target = nodesById[edge.targetId];
+      if (edge.hidden ||
+          source == null ||
+          target == null ||
+          !FlowGeometry.isVisible(source, nodesById) ||
+          !FlowGeometry.isVisible(target, nodesById)) {
+        continue;
+      }
       final path = FlowGeometry.edgePathFor(edge, nodesById);
       canvas.drawPath(
         path,

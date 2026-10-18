@@ -181,7 +181,7 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
             if (widget.selectAllIncludesHidden) return true;
             final source = nodesById[edge.sourceId];
             final target = nodesById[edge.targetId];
-            return !edge.hidden &&
+            return _edgeIsVisible(edge, nodesById) &&
                 source != null &&
                 target != null &&
                 FlowGeometry.isVisible(source, nodesById) &&
@@ -269,7 +269,7 @@ extension _FlowCanvasSelection<T> on _FFlowCanvasState<T> {
     final bottomRight =
         _screenToFlow(Offset(_viewportSize.width, _viewportSize.height));
     if (Rect.fromPoints(topLeft, bottomRight).contains(point)) return;
-    final scale = _transformController.value.getMaxScaleOnAxis();
+    final scale = _flowScaleOf(_transformController.value);
     final center = Offset(_viewportSize.width / 2, _viewportSize.height / 2);
     final translation = center - point * scale;
     final controller = _transformController;

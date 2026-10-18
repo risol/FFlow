@@ -13,6 +13,7 @@ FlowNode<String> _node(
   List<FlowHandle> handles = const [],
   bool hasInput = true,
   bool hasOutput = true,
+  bool hidden = false,
   Rect? extent,
   bool groupable = false,
   bool selected = false,
@@ -28,6 +29,7 @@ FlowNode<String> _node(
       handles: handles,
       hasInput: hasInput,
       hasOutput: hasOutput,
+      hidden: hidden,
       extent: extent,
       groupable: groupable,
       selected: selected,
@@ -426,6 +428,80 @@ void main() {
       expect(controller.index, isNot(same(oldIndex)));
       expect(controller.getNode('source')!.position, const Offset(8, 9));
     });
+
+    test('controller query order, intersections, selection, and revisions', () {
+      final controller = FlowGraphController<String>(
+        nodes: [
+          _node('first', position: const Offset(0, 0)),
+          _node('second', position: const Offset(60, 20)),
+          _node('hidden', position: const Offset(500, 500), hidden: true),
+        ],
+        edges: const [
+          FlowEdge(id: 'edge', sourceId: 'first', targetId: 'second'),
+        ],
+      );
+      addTearDown(controller.dispose);
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+
+      expect(
+        controller.getNodes(
+            ids: ['second', 'missing', 'first']).map((node) => node.id),
+        ['second', 'first'],
+      );
+      expect(controller.getEdges(ids: ['missing', 'edge']).single.id, 'edge');
+      expect(controller.nodesBounds, const Rect.fromLTWH(0, 0, 160, 80));
+      expect(
+        controller
+            .getNodesInside(const Rect.fromLTWH(50, 10, 30, 30))
+            .map((node) => node.id),
+        ['first', 'second'],
+      );
+      expect(
+        controller
+            .getNodesInside(
+              const Rect.fromLTWH(50, 10, 30, 30),
+              partial: false,
+            )
+            .map((node) => node.id),
+        isEmpty,
+      );
+      expect(
+        controller
+            .getNodesInside(
+              const Rect.fromLTWH(500, 500, 30, 30),
+              includeHidden: true,
+            )
+            .map((node) => node.id),
+        ['hidden'],
+      );
+      expect(
+        controller.getIntersectingNodes('first').map((node) => node.id),
+        ['second'],
+      );
+      expect(
+        controller.isNodeIntersecting(
+          'second',
+          const Rect.fromLTWH(50, 10, 30, 30),
+        ),
+        isTrue,
+      );
+
+      controller.setSelection(nodeIds: ['second'], edgeIds: ['edge']);
+      expect(controller.selection.nodes, {'second'});
+      expect(controller.selection.edges, {'edge'});
+      expect(controller.graphRevision, 1);
+      expect(controller.geometryRevision, 0);
+      expect(notifications, 1);
+
+      controller.updateNode(
+        'first',
+        (node) => node.copyWith(position: const Offset(4, 5)),
+      );
+      expect(controller.graphRevision, 2);
+      expect(controller.geometryRevision, 1);
+      expect(notifications, 2);
+    });
   });
 
   group('snapshot migrations', () {
@@ -588,5 +664,29 @@ void main() {
     expect(result.bounds.bottom, greaterThanOrEqualTo(120));
     expect(result.labelPosition, isNot(Offset.zero));
     expect(result.metrics, isNotEmpty);
+  });
+
+  test('all built-in edge styles resolve measurable paths', () {
+    final source = _node('source', position: const Offset(20, 30));
+    final target = _node('target', position: const Offset(280, 150));
+    final nodes = {'source': source, 'target': target};
+
+    for (final type in FlowEdgeType.values) {
+      final result = FlowGeometry.edgePathResult<String>(
+        FlowEdge(
+          id: 'edge-${type.name}',
+          sourceId: 'source',
+          targetId: 'target',
+          type: type,
+        ),
+        nodes,
+      );
+
+      expect(result, isNotNull, reason: '${type.name} path should resolve');
+      expect(result!.sourceAnchor, const Offset(120, 60));
+      expect(result.targetAnchor, const Offset(280, 180));
+      expect(result.bounds.isFinite, isTrue);
+      expect(result.metrics, isNotEmpty);
+    }
   });
 }

@@ -16,16 +16,49 @@ abstract interface class FlowLayoutEngine<T> {
 }
 
 class FlowLayoutResult {
-  FlowLayoutResult(Map<String, Offset> positions)
-      : positions = Map.unmodifiable(positions);
+  FlowLayoutResult(
+    Map<String, Offset> positions, {
+    Map<String, Size> sizes = const {},
+  })  : positions = Map.unmodifiable(positions),
+        sizes = Map.unmodifiable(sizes);
 
   final Map<String, Offset> positions;
+  final Map<String, Size> sizes;
 
   List<FlowNode<T>> applyTo<T>(Iterable<FlowNode<T>> nodes) =>
       List.unmodifiable([
         for (final node in nodes)
-          node.copyWith(position: positions[node.id] ?? node.position),
+          node.copyWith(
+            position: positions[node.id] ?? node.position,
+            width: sizes[node.id]?.width ?? node.width,
+            height: sizes[node.id]?.height ?? node.height,
+          ),
       ]);
+
+  /// Interpolates node positions and sizes from [nodes] toward this result.
+  ///
+  /// Pass a value in the range 0–1, typically from a Flutter animation. Nodes
+  /// without a result entry remain unchanged.
+  List<FlowNode<T>> interpolate<T>(
+    Iterable<FlowNode<T>> nodes,
+    double progress,
+  ) {
+    final t = progress.clamp(0.0, 1.0).toDouble();
+    return List.unmodifiable([
+      for (final node in nodes)
+        node.copyWith(
+          position: positions.containsKey(node.id)
+              ? Offset.lerp(node.position, positions[node.id]!, t)
+              : node.position,
+          width: sizes.containsKey(node.id)
+              ? node.width + (sizes[node.id]!.width - node.width) * t
+              : node.width,
+          height: sizes.containsKey(node.id)
+              ? node.height + (sizes[node.id]!.height - node.height) * t
+              : node.height,
+        ),
+    ]);
+  }
 }
 
 /// Routing output shared by automatic routers and editable edge points.
@@ -34,6 +67,9 @@ class FlowEdgeRoute {
       : controlPoints = List.unmodifiable(controlPoints);
 
   final List<Offset> controlPoints;
+
+  FlowEdge applyTo(FlowEdge edge) =>
+      edge.copyWith(controlPoints: controlPoints);
 }
 
 /// Dependency-free contract for optional orthogonal or obstacle-aware routers.
@@ -43,6 +79,8 @@ abstract interface class FlowEdgeRouter {
     required Rect sourceBounds,
     required Rect targetBounds,
     required List<Rect> obstacles,
+    Offset? sourceAnchor,
+    Offset? targetAnchor,
     Map<String, Object?> options = const {},
   });
 }

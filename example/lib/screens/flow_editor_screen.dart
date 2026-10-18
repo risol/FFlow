@@ -8,6 +8,7 @@ import '../models/demo_node_data.dart';
 import '../widgets/demo_node_card.dart';
 import '../widgets/demo_node_palette.dart';
 import '../widgets/demo_properties_panel.dart';
+import '../widgets/demo_subflow_card.dart';
 
 class FlowEditorScreen extends StatefulWidget {
   const FlowEditorScreen({super.key});
@@ -16,7 +17,8 @@ class FlowEditorScreen extends StatefulWidget {
   State<FlowEditorScreen> createState() => _FlowEditorScreenState();
 }
 
-class _FlowEditorScreenState extends State<FlowEditorScreen> {
+class _FlowEditorScreenState extends State<FlowEditorScreen>
+    with SingleTickerProviderStateMixin {
   static const _initialWorkflowName = 'Research workflow';
 
   final FlowCanvasController _canvasController = FlowCanvasController();
@@ -27,8 +29,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   final FlowHistoryController<DemoNodeData> _history =
       FlowHistoryController<DemoNodeData>();
   final FlowClipboard<DemoNodeData> _clipboard = FlowClipboard();
+  final TextEditingController _renameController = TextEditingController();
+  final TextEditingController _importController = TextEditingController();
   final GlobalKey _canvasViewportKey = GlobalKey();
   final Set<String> _completedNodeIds = {};
+  late final AnimationController _layoutAnimationController;
 
   String _workflowName = _initialWorkflowName;
   String? _runningNodeId;
@@ -38,6 +43,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   bool _hasUnexportedChanges = false;
   bool _canvasLocked = false;
   bool _isRunning = false;
+  bool _isAnimatingLayout = false;
   int _nodeIdCounter = 1;
   int _edgeIdCounter = 4;
   int _clipboardIdCounter = 1;
@@ -115,6 +121,10 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   @override
   void initState() {
     super.initState();
+    _layoutAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
     _graph.addListener(_handleGraphChanged);
     _history.addListener(_handleHistoryChanged);
     _canvasController.addListener(_handleViewportChanged);
@@ -129,12 +139,15 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
 
   @override
   void dispose() {
+    _layoutAnimationController.dispose();
     _graph.removeListener(_handleGraphChanged);
     _history.removeListener(_handleHistoryChanged);
     _canvasController.removeListener(_handleViewportChanged);
     _graph.dispose();
     _history.dispose();
     _canvasController.dispose();
+    _renameController.dispose();
+    _importController.dispose();
     super.dispose();
   }
 
@@ -180,6 +193,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   void _fitToView() {
+    if (_isAnimatingLayout) return;
     final viewport = _viewportSize;
     if (viewport == null || viewport.isEmpty || _graph.nodes.isEmpty) return;
     _canvasController.fitView(_graph.nodes, viewport, padding: 130);
@@ -202,6 +216,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   String _newClipboardId() => 'paste-${_clipboardIdCounter++}';
 
   void _addNode(DemoNodeKind kind) {
+    if (_isAnimatingLayout) return;
     final viewport = _viewportSize;
     final center = viewport == null
         ? const Offset(650, 420)
@@ -209,6 +224,12 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             Offset(viewport.width / 2, viewport.height / 2),
           );
     final id = _newNodeId();
+    final existingIds = _graph.nodes.map((existing) => existing.id).toSet();
+    final before = FlowGraphState<DemoNodeData>(
+      nodes: _graph.nodes,
+      edges: _graph.edges,
+      selection: _selection,
+    );
     final node = FlowNode<DemoNodeData>(
       id: id,
       position: Offset(center.dx - 122, center.dy - 63),
@@ -224,6 +245,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       hasOutput: kind != DemoNodeKind.output,
       selected: true,
     );
+    _history.beginTransaction('Add node', before);
     _graph.setGraph(
       nodes: [
         for (final existing in _graph.nodes) existing.copyWith(selected: false),
@@ -234,9 +256,24 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ],
     );
     _selection = FlowSelection(nodes: [id]);
+    final dynamicLayout = FlowForceLayoutEngine<DemoNodeData>(
+      fixedNodeIds: existingIds,
+    ).layout(nodes: _graph.nodes, edges: _graph.edges);
+    _graph.setGraph(
+      nodes: dynamicLayout.applyTo(_graph.nodes),
+      edges: _graph.edges,
+    );
+    _history.commitTransaction(
+      FlowGraphState<DemoNodeData>(
+        nodes: _graph.nodes,
+        edges: _graph.edges,
+        selection: _selection,
+      ),
+    );
   }
 
   void _duplicateNode(FlowNode<DemoNodeData> node) {
+    if (_isAnimatingLayout) return;
     final copy = node.copyWith(
       id: _newNodeId(),
       position: node.position + const Offset(34, 34),
@@ -255,11 +292,13 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   void _deleteNode(String id) {
+    if (_isAnimatingLayout) return;
     _graph.deleteElements(nodeIds: [id]);
     _selection = FlowSelection();
   }
 
   void _deleteSelected() {
+    if (_isAnimatingLayout) return;
     if (_selection.isEmpty) return;
     _graph.deleteElements(
       nodeIds: _selection.nodes,
@@ -268,7 +307,88 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     _selection = FlowSelection();
   }
 
+  void _groupSelectedNodes() {
+    if (_isAnimatingLayout || _selection.nodes.length < 2) return;
+    final nodesById = _graph.index.nodesById;
+    final selectedNodes = _selection.nodes
+        .map((id) => nodesById[id])
+        .whereType<FlowNode<DemoNodeData>>()
+        .toList(growable: false);
+    if (selectedNodes.length < 2) return;
+    Rect? selectionBounds;
+    for (final node in selectedNodes) {
+      final rect = FlowGeometry.nodeRect(node, nodesById);
+      selectionBounds = selectionBounds == null
+          ? rect
+          : selectionBounds.expandToInclude(rect);
+    }
+    final bounds = selectionBounds;
+    if (bounds == null) return;
+    const leftPadding = 24.0;
+    const topPadding = 52.0;
+    const rightPadding = 24.0;
+    const bottomPadding = 22.0;
+    final groupTopLeft = Offset(
+      bounds.left - leftPadding,
+      bounds.top - topPadding,
+    );
+    final groupId = _newNodeId();
+    final group = FlowNode<DemoNodeData>(
+      id: groupId,
+      type: 'subflow',
+      position: groupTopLeft,
+      data: const DemoNodeData(
+        title: 'Subflow',
+        description: 'Grouped workflow steps',
+        kind: DemoNodeKind.ai,
+      ),
+      width: bounds.width + leftPadding + rightPadding,
+      height: bounds.height + topPadding + bottomPadding,
+      hasInput: false,
+      hasOutput: false,
+      resizable: true,
+      groupable: true,
+      minWidth: 176,
+      minHeight: 54,
+      selected: true,
+    );
+    final selectedIds = selectedNodes.map((node) => node.id).toSet();
+    final before = FlowGraphState<DemoNodeData>(
+      nodes: _graph.nodes,
+      edges: _graph.edges,
+      selection: _selection,
+    );
+    _history.beginTransaction('Group nodes', before);
+    _graph.setGraph(
+      nodes: [
+        for (final node in _graph.nodes)
+          if (selectedIds.contains(node.id))
+            node.copyWith(
+              parentId: groupId,
+              position: FlowGeometry.absolutePosition(node, nodesById) -
+                  groupTopLeft +
+                  Offset(node.width * node.origin.dx,
+                      node.height * node.origin.dy),
+              selected: false,
+            )
+          else
+            node.copyWith(selected: false),
+        group,
+      ],
+      edges: [for (final edge in _graph.edges) edge.copyWith(selected: false)],
+    );
+    _selection = FlowSelection(nodes: [groupId]);
+    _history.commitTransaction(
+      FlowGraphState<DemoNodeData>(
+        nodes: _graph.nodes,
+        edges: _graph.edges,
+        selection: _selection,
+      ),
+    );
+  }
+
   void _clearSelection() {
+    if (_isAnimatingLayout) return;
     _selection = FlowSelection();
     _graph.setSelection();
   }
@@ -278,6 +398,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     String title,
     String description,
   ) {
+    if (_isAnimatingLayout) return;
     _graph.updateNode(
       node.id,
       (current) => current.copyWith(
@@ -292,6 +413,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     String? label,
     FlowEdgeType type,
   ) {
+    if (_isAnimatingLayout) return;
     _graph.updateEdge(
       edge.id,
       (current) => current.copyWith(label: label, type: type),
@@ -313,11 +435,13 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   void _undo() {
+    if (_isAnimatingLayout) return;
     final state = _history.undo();
     if (state != null) _applyHistoryState(state);
   }
 
   void _redo() {
+    if (_isAnimatingLayout) return;
     final state = _history.redo();
     if (state != null) _applyHistoryState(state);
   }
@@ -359,14 +483,15 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   Future<void> _renameWorkflow() async {
-    final controller = TextEditingController(text: _workflowName);
+    if (_isAnimatingLayout) return;
+    _renameController.text = _workflowName;
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF191D27),
         title: const Text('Rename workflow'),
         content: TextField(
-          controller: controller,
+          controller: _renameController,
           autofocus: true,
           maxLength: 48,
           decoration: const InputDecoration(hintText: 'Workflow name'),
@@ -378,19 +503,19 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, _renameController.text),
             child: const Text('Rename'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (value == null || value.trim().isEmpty) return;
     setState(() => _workflowName = value.trim());
     _refreshDirtyState();
   }
 
   Future<void> _showExportDialog() async {
+    if (_isAnimatingLayout) return;
     final json = _snapshotJson();
     await showDialog<void>(
       context: context,
@@ -461,7 +586,8 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   Future<void> _showImportDialog() async {
-    final controller = TextEditingController();
+    if (_isAnimatingLayout) return;
+    _importController.clear();
     final input = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -477,7 +603,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         content: SizedBox(
           width: 560,
           child: TextField(
-            controller: controller,
+            controller: _importController,
             autofocus: true,
             minLines: 10,
             maxLines: 18,
@@ -498,14 +624,13 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton.icon(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, _importController.text),
             icon: const Icon(Icons.file_download_outlined, size: 15),
             label: const Text('Import'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (input == null || input.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(input);
@@ -536,6 +661,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   }
 
   Future<void> _showCompactNodePicker() async {
+    if (_isAnimatingLayout) return;
     final kind = await showModalBottomSheet<DemoNodeKind>(
       context: context,
       backgroundColor: const Color(0xFF171B25),
@@ -574,22 +700,180 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     }
   }
 
+  Future<void> _autoLayout() async {
+    if (_isAnimatingLayout) return;
+    if (_graph.nodes.isEmpty) return;
+    final result = const FlowLayeredLayoutEngine<DemoNodeData>(
+      direction: FlowLayoutDirection.leftToRight,
+    ).layout(nodes: _graph.nodes, edges: _graph.edges);
+    await _applyLayoutResult(result, label: 'Auto layout');
+  }
+
+  Future<void> _forceLayout() async {
+    if (_isAnimatingLayout) return;
+    if (_graph.nodes.isEmpty) return;
+    final result = const FlowForceLayoutEngine<DemoNodeData>()
+        .layout(nodes: _graph.nodes, edges: _graph.edges);
+    await _applyLayoutResult(result, label: 'Force layout');
+  }
+
+  Future<void> _applyLayoutResult(
+    FlowLayoutResult result, {
+    required String label,
+  }) async {
+    if (_isAnimatingLayout) return;
+    final beforeNodes = List<FlowNode<DemoNodeData>>.of(_graph.nodes);
+    final beforeEdges = List<FlowEdge>.of(_graph.edges);
+    final nextNodes = result.applyTo(beforeNodes);
+    final nextEdges = await FlowGraphRouting.routeEdges<DemoNodeData>(
+      nodes: nextNodes,
+      edges: beforeEdges,
+      router: const FlowOrthogonalEdgeRouter(),
+    );
+    final nodesChanged = nextNodes.any((node) {
+      final current = _graph.getNode(node.id);
+      return current == null ||
+          current.position != node.position ||
+          current.width != node.width ||
+          current.height != node.height;
+    });
+    final edgesChanged = nextEdges.asMap().entries.any((entry) =>
+        entry.value.controlPoints.length !=
+            beforeEdges[entry.key].controlPoints.length ||
+        entry.value.controlPoints.asMap().entries.any((point) =>
+            point.value != beforeEdges[entry.key].controlPoints[point.key]));
+    final changed = nodesChanged || edgesChanged;
+    if (!changed) {
+      _showMessage('The graph is already laid out');
+      return;
+    }
+
+    final before = FlowGraphState<DemoNodeData>(
+      nodes: beforeNodes,
+      edges: _graph.edges,
+      selection: _selection,
+    );
+    _history.beginTransaction(label, before);
+    setState(() => _isAnimatingLayout = true);
+    final curve = CurvedAnimation(
+      parent: _layoutAnimationController,
+      curve: Curves.easeInOutCubic,
+    );
+    void updatePositions() {
+      _graph.setGraph(
+        nodes: result.interpolate(beforeNodes, curve.value),
+        edges: beforeEdges,
+      );
+    }
+
+    _layoutAnimationController.addListener(updatePositions);
+    try {
+      await _layoutAnimationController.forward(from: 0).orCancel;
+    } on TickerCanceled {
+      _history.cancelTransaction();
+      return;
+    } finally {
+      _layoutAnimationController.removeListener(updatePositions);
+      curve.dispose();
+      if (mounted) setState(() => _isAnimatingLayout = false);
+    }
+    if (!mounted) {
+      _history.cancelTransaction();
+      return;
+    }
+    _graph.setGraph(nodes: nextNodes, edges: nextEdges);
+    _history.commitTransaction(
+      FlowGraphState<DemoNodeData>(
+        nodes: _graph.nodes,
+        edges: _graph.edges,
+        selection: _selection,
+      ),
+    );
+    _fitToView();
+    _showMessage('$label complete');
+  }
+
+  void _toggleSelectedGroup() {
+    if (_isAnimatingLayout) return;
+    final node = _selectedNode;
+    if (node == null) return;
+    if (_graph.toggleNodeCollapsed(node.id)) {
+      _showMessage(node.collapsed ? 'Group expanded' : 'Group collapsed');
+    }
+  }
+
+  Future<void> _routeEdges() async {
+    if (_isAnimatingLayout) return;
+    if (_graph.edges.isEmpty) return;
+    final before = FlowGraphState<DemoNodeData>(
+      nodes: _graph.nodes,
+      edges: _graph.edges,
+      selection: _selection,
+    );
+    final routed = await FlowGraphRouting.routeEdges<DemoNodeData>(
+      nodes: _graph.nodes,
+      edges: _graph.edges,
+      router: const FlowOrthogonalEdgeRouter(),
+    );
+    final changed = routed.asMap().entries.any((entry) =>
+        entry.value.controlPoints.length !=
+            before.edges[entry.key].controlPoints.length ||
+        entry.value.controlPoints.asMap().entries.any((point) =>
+            point.value != before.edges[entry.key].controlPoints[point.key]));
+    if (!changed) {
+      _showMessage('Connections are already routed');
+      return;
+    }
+    _history.beginTransaction('Route edges', before);
+    _graph.setGraph(nodes: before.nodes, edges: routed);
+    _history.commitTransaction(
+      FlowGraphState<DemoNodeData>(
+        nodes: _graph.nodes,
+        edges: _graph.edges,
+        selection: _selection,
+      ),
+    );
+    _showMessage('Connections routed');
+  }
+
   Future<void> _showMoreMenu() async {
+    if (_isAnimatingLayout) return;
     final size = MediaQuery.sizeOf(context);
+    final selectedGroup = _selectedNode;
+    final canGroupSelection = _selection.nodes.length >= 2;
+    final canToggleGroup = selectedGroup != null &&
+        _graph.nodes.any((node) => node.parentId == selectedGroup.id);
     final action = await showMenu<String>(
       context: context,
       position:
           RelativeRect.fromLTRB(size.width - 210, 58, 8, size.height - 100),
       color: const Color(0xFF202532),
-      items: const [
-        PopupMenuItem(value: 'import', child: Text('Import JSON')),
-        PopupMenuItem(value: 'export', child: Text('Export JSON')),
-        PopupMenuDivider(),
-        PopupMenuItem(value: 'delete', child: Text('Delete selection')),
-        PopupMenuItem(value: 'fit', child: Text('Fit graph to view')),
+      items: [
+        const PopupMenuItem(value: 'import', child: Text('Import JSON')),
+        const PopupMenuItem(value: 'export', child: Text('Export JSON')),
+        const PopupMenuDivider(),
+        if (canGroupSelection)
+          const PopupMenuItem(
+            value: 'group-selection',
+            child: Text('Group selected nodes'),
+          ),
+        const PopupMenuItem(value: 'delete', child: Text('Delete selection')),
+        if (canToggleGroup)
+          PopupMenuItem(
+            value: 'toggle-group',
+            child: Text(
+                selectedGroup.collapsed ? 'Expand group' : 'Collapse group'),
+          ),
+        const PopupMenuItem(value: 'layout', child: Text('Auto layout')),
+        const PopupMenuItem(value: 'force-layout', child: Text('Force layout')),
+        const PopupMenuItem(value: 'route-edges', child: Text('Route edges')),
+        const PopupMenuItem(value: 'fit', child: Text('Fit graph to view')),
       ],
     );
     switch (action) {
+      case 'group-selection':
+        _groupSelectedNodes();
+        break;
       case 'import':
         await _showImportDialog();
         break;
@@ -601,6 +885,18 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         break;
       case 'fit':
         _fitToView();
+        break;
+      case 'layout':
+        await _autoLayout();
+        break;
+      case 'force-layout':
+        await _forceLayout();
+        break;
+      case 'route-edges':
+        await _routeEdges();
+        break;
+      case 'toggle-group':
+        _toggleSelectedGroup();
         break;
       case null:
         break;
@@ -642,30 +938,38 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _EditorTopBar(
-              workflowName: _workflowName,
-              dirty: _hasUnexportedChanges,
-              compact: compact,
-              showPalette: showPalette,
-              canUndo: _history.canUndo,
-              canRedo: _history.canRedo,
-              isRunning: _isRunning,
-              selectionCount: _selection.nodes.length + _selection.edges.length,
-              onRename: _renameWorkflow,
-              onUndo: () => _undoOrRedo(false),
-              onRedo: () => _undoOrRedo(true),
-              onRun: _runWorkflow,
-              onImport: _showImportDialog,
-              onExport: _showExportDialog,
-              onAdd: _showCompactNodePicker,
-              onShowPalette: _showCompactNodePicker,
-              onDelete: _deleteSelected,
-              onMore: _showMoreMenu,
+            IgnorePointer(
+              ignoring: _isAnimatingLayout,
+              child: _EditorTopBar(
+                workflowName: _workflowName,
+                dirty: _hasUnexportedChanges,
+                compact: compact,
+                showPalette: showPalette,
+                canUndo: _history.canUndo && !_isAnimatingLayout,
+                canRedo: _history.canRedo && !_isAnimatingLayout,
+                isRunning: _isRunning,
+                selectionCount:
+                    _selection.nodes.length + _selection.edges.length,
+                onRename: _renameWorkflow,
+                onUndo: () => _undoOrRedo(false),
+                onRedo: () => _undoOrRedo(true),
+                onRun: _runWorkflow,
+                onImport: _showImportDialog,
+                onExport: _showExportDialog,
+                onAdd: _showCompactNodePicker,
+                onShowPalette: _showCompactNodePicker,
+                onDelete: _deleteSelected,
+                onMore: _showMoreMenu,
+              ),
             ),
             Expanded(
               child: Row(
                 children: [
-                  if (showPalette) DemoNodePalette(onAdd: _addNode),
+                  if (showPalette)
+                    IgnorePointer(
+                      ignoring: _isAnimatingLayout,
+                      child: DemoNodePalette(onAdd: _addNode),
+                    ),
                   Expanded(
                     child: Stack(
                       key: _canvasViewportKey,
@@ -689,14 +993,24 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
                             helperLinesEnabled: true,
                             onlyRenderVisibleElements: true,
                             nodeBuilder: (context, node, isSelected) =>
-                                DemoNodeCard(
-                              node: node,
-                              selected: isSelected,
-                              running: node.id == _runningNodeId,
-                              completed: _completedNodeIds.contains(node.id),
-                              onDuplicate: () => _duplicateNode(node),
-                              onDelete: () => _deleteNode(node.id),
-                            ),
+                                node.type == 'subflow'
+                                    ? DemoSubflowCard(
+                                        title: node.data.title,
+                                        childCount: _graph.index
+                                            .childrenOf(node.id)
+                                            .length,
+                                        collapsed: node.collapsed,
+                                        selected: isSelected,
+                                      )
+                                    : DemoNodeCard(
+                                        node: node,
+                                        selected: isSelected,
+                                        running: node.id == _runningNodeId,
+                                        completed:
+                                            _completedNodeIds.contains(node.id),
+                                        onDuplicate: () => _duplicateNode(node),
+                                        onDelete: () => _deleteNode(node.id),
+                                      ),
                             onSelectionChanged: (selection) {
                               setState(() => _selection = selection);
                             },
@@ -810,6 +1124,10 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
                                 setState(() => _backgroundVariant = variant),
                           ),
                         ),
+                        if (_isAnimatingLayout)
+                          const Positioned.fill(
+                            child: AbsorbPointer(child: SizedBox.expand()),
+                          ),
                       ],
                     ),
                   ),
@@ -1029,22 +1347,26 @@ class _EditorTopBar extends StatelessWidget {
           const SizedBox(width: 7),
           SizedBox(
             height: 36,
-            child: FilledButton.icon(
-              onPressed: onAdd,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF8878F5),
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 13),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+            child: Tooltip(
+              message: 'Add node',
+              child: FilledButton.icon(
+                onPressed: onAdd,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF8878F5),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                textStyle: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label:
+                    compact ? const SizedBox.shrink() : const Text('Add node'),
               ),
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: compact ? const SizedBox.shrink() : const Text('Add node'),
             ),
           ),
         ],

@@ -21,7 +21,7 @@ extension _FlowCanvasViewportInteractions<T> on _FFlowCanvasState<T> {
     final focalPoint = renderObject.globalToLocal(event.position);
     final factor =
         math.exp(-event.scrollDelta.dy / 500).clamp(0.5, 2.0).toDouble();
-    final current = _transformController.value.getMaxScaleOnAxis();
+    final current = _flowScaleOf(_transformController.value);
     final next =
         (current * factor).clamp(widget.minZoom, widget.maxZoom).toDouble();
     final scaleFactor = next / current;
@@ -36,7 +36,7 @@ extension _FlowCanvasViewportInteractions<T> on _FFlowCanvasState<T> {
     if (details.pointerCount < 2 || !widget.zoomEnabled) return;
     final startZoom = _pinchStartZoom;
     if (startZoom == null) return;
-    final currentZoom = _transformController.value.getMaxScaleOnAxis();
+    final currentZoom = _flowScaleOf(_transformController.value);
     final targetZoom =
         (startZoom * details.scale).clamp(widget.minZoom, widget.maxZoom);
     if (targetZoom == currentZoom || currentZoom == 0) return;
@@ -158,7 +158,7 @@ extension _FlowCanvasViewportInteractions<T> on _FFlowCanvasState<T> {
   }
 
   void _zoomAt(Offset focalPoint, double factor) {
-    final current = _transformController.value.getMaxScaleOnAxis();
+    final current = _flowScaleOf(_transformController.value);
     final next =
         (current * factor).clamp(widget.minZoom, widget.maxZoom).toDouble();
     final scale = next / current;
@@ -174,7 +174,7 @@ extension _FlowCanvasViewportInteractions<T> on _FFlowCanvasState<T> {
     final topLeft = _screenToFlow(Offset.zero);
     final bottomRight =
         _screenToFlow(Offset(_viewportSize.width, _viewportSize.height));
-    final margin = 120 / _transformController.value.getMaxScaleOnAxis();
+    final margin = 120 / _flowScaleOf(_transformController.value);
     return Rect.fromPoints(topLeft, bottomRight).inflate(margin);
   }
 }

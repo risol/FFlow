@@ -172,7 +172,7 @@ abstract final class FlowGeometry {
     while (parentId != null && visited.add(parentId)) {
       final parent = nodes[parentId];
       if (parent == null) break;
-      if (parent.hidden) return false;
+      if (parent.hidden || parent.collapsed) return false;
       parentId = parent.parentId;
     }
     return true;

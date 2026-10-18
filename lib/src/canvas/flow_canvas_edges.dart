@@ -159,7 +159,7 @@ extension _FlowCanvasEdges<T> on _FFlowCanvasState<T> {
           onPanUpdate: (details) => _moveEdgeControlPoint(
             edge.id,
             pointIndex,
-            details.delta / _transformController.value.getMaxScaleOnAxis(),
+            details.delta / _flowScaleOf(_transformController.value),
           ),
           onPanEnd: (_) =>
               widget.historyController?.commitTransaction(_captureGraphState()),
