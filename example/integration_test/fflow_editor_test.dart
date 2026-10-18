@@ -7,14 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-void _useEditorViewport(WidgetTester tester) {
-  tester.view
-    ..physicalSize = const Size(900, 800)
-    ..devicePixelRatio = 1;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-}
-
 Future<void> _openEditorAction(
   WidgetTester tester, {
   required String tooltip,
@@ -43,7 +35,6 @@ void main() {
 
   testWidgets('editor adds, undoes, redoes, exports, and imports a workflow',
       (tester) async {
-    _useEditorViewport(tester);
     app.main();
     await tester.pumpAndSettle();
 
@@ -113,7 +104,6 @@ void main() {
 
   testWidgets('selected nodes can be grouped, collapsed, and expanded',
       (tester) async {
-    _useEditorViewport(tester);
     app.main();
     await tester.pumpAndSettle();
 
@@ -141,7 +131,6 @@ void main() {
 
   testWidgets('editor routes edges and runs both layout actions',
       (tester) async {
-    _useEditorViewport(tester);
     app.main();
     await tester.pumpAndSettle();
 
@@ -157,11 +146,17 @@ void main() {
     await tester.tap(find.text('Run'));
     await tester.pumpAndSettle(const Duration(milliseconds: 100));
     expect(find.text('Workflow completed'), findsOneWidget);
+
+    await tester.tap(find.text('Run'));
+    await tester.pump();
+    expect(find.text('Stop'), findsOneWidget);
+    await tester.tap(find.text('Stop'));
+    await tester.pumpAndSettle();
+    expect(find.text('Run stopped'), findsOneWidget);
   });
 
   testWidgets('nodes can connect and use keyboard copy and paste',
       (tester) async {
-    _useEditorViewport(tester);
     app.main();
     await tester.pumpAndSettle();
 
@@ -193,5 +188,43 @@ void main() {
 
     expect(find.text('5 steps'), findsOneWidget);
     expect(find.text('Summarize sources'), findsWidgets);
+  });
+
+  testWidgets('node properties, cascade delete, and invalid import are handled',
+      (tester) async {
+    app.main();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Summarize sources'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField).first,
+      'Summarize references',
+    );
+    await tester.tap(find.text('Apply changes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Summarize references'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Delete selection'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 steps'), findsOneWidget);
+    expect(find.text('1 connections'), findsOneWidget);
+
+    await _openEditorAction(
+      tester,
+      tooltip: 'Import workflow JSON',
+      compactMenuLabel: 'Import JSON',
+    );
+    final importDialog = find.byType(AlertDialog).last;
+    await tester.enterText(
+      find.descendant(of: importDialog, matching: find.byType(TextField)),
+      '{invalid json',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Could not import workflow'), findsOneWidget);
+    expect(find.text('3 steps'), findsOneWidget);
+    expect(find.text('1 connections'), findsOneWidget);
   });
 }

@@ -1296,12 +1296,12 @@ class _EditorTopBar extends StatelessWidget {
               icon: Icons.ios_share_rounded,
               onPressed: onExport,
             ),
-          ] else
-            _BarIconButton(
-              tooltip: 'More actions',
-              icon: Icons.more_vert_rounded,
-              onPressed: onMore,
-            ),
+          ],
+          _BarIconButton(
+            tooltip: 'More actions',
+            icon: Icons.more_vert_rounded,
+            onPressed: onMore,
+          ),
           if (selectionCount > 0 && width > 700)
             _BarIconButton(
               tooltip: 'Delete selection',
