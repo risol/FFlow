@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:fflow/fflow.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,9 +93,12 @@ void main() {
     final selection = await tester.startGesture(const Offset(560, 320));
     await selection.moveTo(const Offset(730, 390));
     await tester.pump();
+    final goldenPath = Platform.isLinux
+        ? 'goldens/fflow_canvas_editor_linux.png'
+        : 'goldens/fflow_canvas_editor.png';
     await expectLater(
       find.byType(FFlowCanvas<String>),
-      matchesGoldenFile('goldens/fflow_canvas_editor.png'),
+      matchesGoldenFile(goldenPath),
     );
     await selection.up();
     await tester.pumpAndSettle();
