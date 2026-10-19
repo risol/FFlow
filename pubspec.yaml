@@ -1,6 +1,6 @@
 name: fflow
 description: A reusable Flutter SDK for building interactive node and edge flow editors.
-version: 0.1.0
+version: 0.1.5
 repository: https://github.com/risol/FFlow
 
 environment:

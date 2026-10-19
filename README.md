@@ -106,7 +106,7 @@ The SDK canvas and graph logic use Flutter/Dart and are shared across targets. P
 | Target | Implementation | Build/validation status |
 | --- | --- | --- |
 | Windows | Flutter Windows runner in `example/windows/`; uses the shared FFlow canvas. | The demo's Windows release build has succeeded on a Windows host. |
-| Linux | Flutter Linux runner in `example/linux/`; uses the shared FFlow canvas. | Runner is included, but a Linux build has not been verified. UOS compatibility is also unverified; check the release bundle's system-library requirements on the target distribution. |
+| Linux | Flutter Linux runner in `example/linux/`; uses the shared FFlow canvas. | CI and release builds run in Ubuntu 20.04 (glibc 2.31) containers hosted by Ubuntu 24.04 runners. UOS compatibility is unverified; check the release bundle's system-library requirements on the target distribution. |
 | macOS | Flutter macOS runner in `example/macos/`; uses the shared FFlow canvas. | Runner is included, but a macOS build has not been verified. |
 | Web | Flutter web runner in `example/web/`; uses the shared FFlow canvas. | The demo's Web release build has succeeded on a Windows host. |
 | Android / iOS | Not in scope; the demo has no mobile runners. | Not supported by this project. |
@@ -180,7 +180,7 @@ Release checklist:
 1. Update `CHANGELOG.md` and the root `pubspec.yaml` version to the same `x.y.z` version.
 2. Run `flutter analyze`, the available tests, and release builds for the supported targets. Run `flutter pub publish --dry-run` when preparing a pub.dev release.
 3. Commit the release metadata, for example `chore(release): 0.1.0`.
-4. Create and push an annotated Git tag that matches the package version with a `v` prefix:
+4. Create and push an annotated Git tag that matches the package version with a `v` prefix. This starts the `Build and publish demo release` workflow, which builds and attaches Linux, Windows, macOS, and Web demo archives to a GitHub Release. The workflow can also be run manually for an existing tag:
 
    ```powershell
    git tag -a v0.1.0 -m "FFlow 0.1.0"
@@ -188,7 +188,7 @@ Release checklist:
    git push origin v0.1.0
    ```
 
-5. Create a GitHub Release from that tag. Publish to pub.dev separately only when that distribution channel is intended.
+Publish to pub.dev separately only when that distribution channel is intended.
 
 Do not reuse a version after publishing it. The SDK package does not commit a root `pubspec.lock`; the runnable example is an app and keeps `example/pubspec.lock` under version control.
 
@@ -246,6 +246,8 @@ flutter run -d windows
 ```
 
 The example includes platform runners for Windows, Linux, macOS, and Web. Android and iOS are outside this project's target scope. The SDK itself does not include an application entry point or platform runner.
+
+Prebuilt demo archives are attached to [GitHub Releases](https://github.com/risol/FFlow/releases).
 
 ## Package layout
 

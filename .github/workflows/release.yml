@@ -1,49 +1,129 @@
-name: Release build matrix
+name: Build and publish demo release
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish (for example, v0.1.5)
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  desktop:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: macos
-    runs-on: ${{ matrix.os }}
+  linux:
+    # Build against glibc 2.31 while using the Ubuntu 24.04 hosted runner.
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:20.04
     steps:
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates clang cmake curl git libgtk-3-dev liblzma-dev libsecret-1-dev libstdc++-9-dev libglu1-mesa ninja-build pkg-config unzip xz-utils zip
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
       - run: flutter pub get
-      - run: cd example && flutter pub get && flutter build ${{ matrix.platform }} --release
+      - run: cd example && flutter pub get && flutter build linux --release
+      - name: Archive Linux demo
+        run: tar -czf fflow-linux-x64.tar.gz -C example/build/linux/x64/release bundle
       - uses: actions/upload-artifact@v7
         with:
-          name: example-${{ matrix.platform }}
-          path: example/build/${{ matrix.platform }}
+          name: fflow-linux
+          path: fflow-linux-x64.tar.gz
+          if-no-files-found: error
 
-  web:
-    runs-on: ubuntu-latest
+  windows:
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cd example && flutter pub get && flutter build windows --release
+      - name: Archive Windows demo
+        run: Compress-Archive -Path example/build/windows/x64/runner/Release/* -DestinationPath fflow-windows-x64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fflow-windows
+          path: fflow-windows-x64.zip
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cd example && flutter pub get && flutter build macos --release
+      - name: Archive macOS demo
+        run: |
+          cd example/build/macos/Build/Products/Release
+          tar -czf "$GITHUB_WORKSPACE/fflow-macos.tar.gz" -- *.app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fflow-macos
+          path: fflow-macos.tar.gz
+          if-no-files-found: error
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - run: flutter pub get
       - run: cd example && flutter pub get && flutter build web --release
+      - name: Archive Web demo
+        run: cd example/build/web && zip -qr "$GITHUB_WORKSPACE/fflow-web.zip" .
       - uses: actions/upload-artifact@v7
         with:
-          name: example-web
-          path: example/build/web
+          name: fflow-web
+          path: fflow-web.zip
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-24.04
+    needs: [linux, windows, macos, web]
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: fflow-*
+          path: dist
+          merge-multiple: true
+      - name: Create or update GitHub Release
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "FFlow ${RELEASE_TAG#v}"
+          fi

@@ -4,9 +4,15 @@ Notable changes to FFlow are recorded here. Entries stay under `Unreleased` unti
 
 ## Unreleased
 
+## 0.1.5
+
 ### Added
 
 - Built-in layered and force-directed layouts, animated layout transitions, incremental node placement, obstacle-aware orthogonal routing, collapsible groups, and example-editor controls for these features.
+
+### Infrastructure
+
+- Automate Linux demo builds in an Ubuntu 20.04 container (glibc 2.31) on Ubuntu 24.04 runners and publish Linux, Windows, macOS, and Web demo archives to GitHub Releases when a version tag is pushed.
 
 ## 0.1.0
 

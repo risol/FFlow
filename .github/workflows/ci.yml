@@ -40,19 +40,22 @@ jobs:
           name: large-graph-benchmark
           path: benchmark/results.json
 
-  build-smoke:
+  build-linux:
     runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:20.04
     steps:
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates clang cmake curl git libgtk-3-dev liblzma-dev libsecret-1-dev libstdc++-9-dev libglu1-mesa ninja-build pkg-config unzip xz-utils xvfb
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
       - run: flutter pub get
-      - run: cd example && flutter pub get && flutter build web --release
-      - run: cd example && flutter analyze
-      - run: cd example && flutter build linux --release
+      - run: cd example && flutter pub get && flutter analyze && flutter build linux --release
       - name: Run example app integration test
         run: cd example && xvfb-run -a flutter test integration_test/fflow_editor_test.dart -d linux
       - name: Archive Linux example bundle
@@ -66,6 +69,17 @@ jobs:
           path: fflow-linux.tar.gz
           if-no-files-found: error
           retention-days: 7
+
+  build-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cd example && flutter pub get && flutter analyze && flutter build web --release
 
   build-desktop:
     # Windows and macOS hosted runners use more of the free allowance than Linux.
