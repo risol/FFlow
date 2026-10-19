@@ -33,6 +33,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Trust the runner-cached Flutter SDK in the container
+        run: git config --global --add safe.directory "$FLUTTER_ROOT"
       - run: flutter pub get
       - run: cd example && flutter pub get && flutter build linux --release
       - name: Archive Linux demo
