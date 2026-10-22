@@ -654,22 +654,30 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
     if (delta == Offset.zero || movingIds.isEmpty) return;
     final nodesById = {for (final node in _nodes) node.id: node};
     final grid = widget.snapGrid;
-    _nodes = List.unmodifiable([
-      for (final node in _nodes)
-        if (movingIds.contains(node.id) && node.draggable)
-          node.copyWith(
-              position: FlowGeometry.constrainNodePosition(
-            node,
-            _snapPosition(node.position + delta, grid),
-            nodesById,
-            globalExtent: widget.nodeExtent,
-          ))
-        else
-          node,
-    ]);
+    final rawPositions = <String, Offset>{};
+    final candidatePositions = <String, Offset>{};
+    final nextNodes = List<FlowNode<T>>.of(_nodes);
+    for (var index = 0; index < nextNodes.length; index++) {
+      final node = nextNodes[index];
+      if (!movingIds.contains(node.id) || !node.draggable) continue;
+      final rawPosition =
+          (_nodeDragRawPositions[node.id] ?? node.position) + delta;
+      final position = FlowGeometry.constrainNodePosition(
+        node,
+        _snapPosition(rawPosition, grid),
+        nodesById,
+        globalExtent: widget.nodeExtent,
+      );
+      rawPositions[node.id] = rawPosition;
+      candidatePositions[node.id] = position;
+      nextNodes[index] = node.copyWith(position: position);
+    }
+    _nodeDragRawPositions.addAll(rawPositions);
+    _nodes = List.unmodifiable(nextNodes);
     for (final id in movingIds) {
       _expandParentsForNode(id);
     }
+    _adjustRawDragPositionsForParentExpansion(candidatePositions);
     if (widget.helperLinesEnabled && movingIds.isNotEmpty) {
       final currentById = {for (final node in _nodes) node.id: node};
       Rect? movingBounds;
@@ -695,23 +703,25 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
         _alignmentGuides = guides;
         if (widget.helperLineSnap && guides.correction != Offset.zero) {
           final boundsById = {for (final node in _nodes) node.id: node};
-          _nodes = List.unmodifiable([
-            for (final node in _nodes)
-              if (movingIds.contains(node.id) && node.draggable)
-                node.copyWith(
-                  position: FlowGeometry.constrainNodePosition(
-                    node,
-                    node.position + guides.correction,
-                    boundsById,
-                    globalExtent: widget.nodeExtent,
-                  ),
-                )
-              else
-                node,
-          ]);
+          final snappedPositions = <String, Offset>{};
+          final snappedNodes = List<FlowNode<T>>.of(_nodes);
+          for (var index = 0; index < snappedNodes.length; index++) {
+            final node = snappedNodes[index];
+            if (!movingIds.contains(node.id) || !node.draggable) continue;
+            final position = FlowGeometry.constrainNodePosition(
+              node,
+              node.position + guides.correction,
+              boundsById,
+              globalExtent: widget.nodeExtent,
+            );
+            snappedPositions[node.id] = position;
+            snappedNodes[index] = node.copyWith(position: position);
+          }
+          _nodes = List.unmodifiable(snappedNodes);
           for (final id in movingIds) {
             _expandParentsForNode(id);
           }
+          _adjustRawDragPositionsForParentExpansion(snappedPositions);
         }
       }
     } else {
@@ -723,6 +733,21 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
     }
     _publishNodes();
     _rebuild(() {});
+  }
+
+  void _adjustRawDragPositionsForParentExpansion(
+    Map<String, Offset> positionsBeforeExpansion,
+  ) {
+    if (positionsBeforeExpansion.isEmpty) return;
+    final currentById = {for (final node in _nodes) node.id: node};
+    for (final entry in positionsBeforeExpansion.entries) {
+      final node = currentById[entry.key];
+      if (node == null) continue;
+      final rawPosition = _nodeDragRawPositions[entry.key];
+      if (rawPosition == null) continue;
+      _nodeDragRawPositions[entry.key] =
+          rawPosition + (node.position - entry.value);
+    }
   }
 
   void _activateNodeDrag(String nodeId) {
@@ -765,6 +790,10 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
       downFlowPosition: capture.downFlowPosition,
       movingNodeIds: movingIds,
     );
+    _nodeDragRawPositions
+      ..clear()
+      ..addEntries(
+          movingIds.map((id) => MapEntry(id, nodesById[id]!.position)));
     _draggingNodeId = nodeId;
     _lastDragFlowPosition = capture.downFlowPosition;
     widget.historyController?.beginTransaction(
@@ -801,6 +830,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
     _pendingNodeDragPointerId = null;
     _nodeDragStartGlobal = null;
     _lastDragFlowPosition = null;
+    _nodeDragRawPositions.clear();
     _alignmentGuides = null;
     _rebuild(() {});
     final history = widget.historyController;
@@ -893,6 +923,7 @@ extension _FlowCanvasPointer<T> on _FFlowCanvasState<T> {
     _pendingNodeDragPointerId = null;
     _nodeDragStartGlobal = null;
     _lastDragFlowPosition = null;
+    _nodeDragRawPositions.clear();
     _alignmentGuides = null;
     _rebuild(() {});
     final history = widget.historyController;

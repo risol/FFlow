@@ -628,6 +628,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
   String? _pendingNodeDragId;
   Offset? _nodeDragStartGlobal;
   Offset? _lastDragFlowPosition;
+  final Map<String, Offset> _nodeDragRawPositions = {};
   int? _pendingNodeDragPointerId;
   bool _selectionKeyPressed = false;
   Offset? _selectionBoxStart;
