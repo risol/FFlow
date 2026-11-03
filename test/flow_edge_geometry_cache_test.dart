@@ -19,6 +19,30 @@ void main() {
     type: FlowEdgeType.straight,
   );
 
+  test('recomputes when a normalized handle anchor changes', () {
+    FlowNode<String> source(Offset anchor) =>
+        _node('source', Offset.zero).copyWith(
+          handles: [
+            FlowHandle(
+                id: 'out',
+                type: FlowHandleType.source,
+                position: FlowHandlePosition.right,
+                anchor: anchor)
+          ],
+        );
+    final cache = FlowEdgeGeometryCache();
+    final nodes = {
+      'source': source(const Offset(.8, .2)),
+      'target': _node('target', const Offset(300, 0))
+    };
+    final first = cache.result(edge, nodes)!;
+    nodes['source'] = source(const Offset(.8, .8));
+    final second = cache.result(edge, nodes)!;
+    expect(first.sourceAnchor, const Offset(80, 20));
+    expect(second.sourceAnchor, const Offset(80, 80));
+    expect(cache.misses, 2);
+  });
+
   test('reuses path geometry and ignores paint-only edge changes', () {
     final nodes = {
       'source': _node('source', Offset.zero),

@@ -5,6 +5,170 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('reciprocal edges use distinct points on the diamond outline', () {
+    final doc = DiagramDocument.fromJson({
+      'schemaVersion': 1,
+      'diagramType': 'flowchart',
+      'layout': {'direction': 'TB', 'nodeSpacing': 96},
+      'nodes': [
+        {
+          'id': 'decision',
+          'type': 'diamond',
+          'label': 'Decision',
+          'size': {'width': 180, 'height': 120}
+        },
+        {'id': 'retry', 'type': 'rounded', 'label': 'Retry'},
+      ],
+      'edges': [
+        {'id': 'out', 'source': 'decision', 'target': 'retry'},
+        {'id': 'back', 'source': 'retry', 'target': 'decision'},
+      ],
+    });
+    final graph = diagramToFlow(doc).snapshot;
+    final nodes = {for (final node in graph.nodes) node.id: node};
+    final out = graph.edges.singleWhere((edge) => edge.id == 'out');
+    final back = graph.edges.singleWhere((edge) => edge.id == 'back');
+    final diamond = FlowGeometry.nodeRect(nodes['decision']!, nodes);
+    final exit = FlowGeometry.edgeSource(out, nodes)!;
+    final entry = FlowGeometry.edgeTarget(back, nodes)!;
+    double diamondDistance(Offset p) =>
+        (p.dx - diamond.center.dx).abs() / (diamond.width / 2) +
+        (p.dy - diamond.center.dy).abs() / (diamond.height / 2);
+    expect(diamondDistance(exit), closeTo(1, 0.0001));
+    expect(diamondDistance(entry), closeTo(1, 0.0001));
+    expect(exit.dy, lessThan(entry.dy));
+    expect(FlowGeometry.edgeTarget(out, nodes)!.dy,
+        lessThan(FlowGeometry.edgeSource(back, nodes)!.dy));
+    expect(out.type, FlowEdgeType.straight);
+    expect(back.type, FlowEdgeType.straight);
+    final restored = FlowGraphSnapshot<Map<String, Object?>>.fromJson(
+      graph.toJson(encodeNodeData: (data) => data),
+      decodeNodeData: (data) => Map<String, Object?>.from(data as Map),
+    );
+    final restoredNodes = {for (final node in restored.nodes) node.id: node};
+    expect(FlowGeometry.edgeSource(restored.edges.first, restoredNodes), exit);
+  });
+  test('flowchart aligns the main spine and uses orthogonal segments', () {
+    for (final direction in ['TB', 'BT', 'LR', 'RL']) {
+      final doc = DiagramDocument.fromJson({
+        'schemaVersion': 1,
+        'diagramType': 'flowchart',
+        'layout': {'direction': direction, 'nodeSpacing': 96},
+        'nodes': [
+          {'id': 'start', 'label': 'Start'},
+          {
+            'id': 'decision',
+            'type': 'diamond',
+            'label': 'Decision',
+            'size': {'width': 180, 'height': 120}
+          },
+          {'id': 'retry', 'label': 'Retry'},
+          {
+            'id': 'done',
+            'type': 'circle',
+            'label': 'Done',
+            'size': {'width': 120, 'height': 120}
+          },
+        ],
+        'edges': [
+          {'id': 'sd', 'source': 'start', 'target': 'decision'},
+          {'id': 'dd', 'source': 'decision', 'target': 'done'},
+          {'id': 'dr', 'source': 'decision', 'target': 'retry'},
+          {'id': 'rd', 'source': 'retry', 'target': 'decision'},
+        ],
+      });
+      final graph = diagramToFlow(doc).snapshot;
+      final nodes = {for (final node in graph.nodes) node.id: node};
+      final decision = FlowGeometry.nodeRect(nodes['decision']!, nodes).center;
+      for (final id in ['start', 'done']) {
+        final center = FlowGeometry.nodeRect(nodes[id]!, nodes).center;
+        expect(
+            direction == 'TB' || direction == 'BT' ? center.dx : center.dy,
+            closeTo(
+                direction == 'TB' || direction == 'BT'
+                    ? decision.dx
+                    : decision.dy,
+                0.01));
+      }
+      for (final edge in graph.edges) {
+        final points = [
+          FlowGeometry.edgeSource(edge, nodes)!,
+          ...edge.controlPoints,
+          FlowGeometry.edgeTarget(edge, nodes)!
+        ];
+        for (var i = 1; i < points.length; i++) {
+          final delta = points[i] - points[i - 1];
+          expect(delta.dx.abs() < 0.01 || delta.dy.abs() < 0.01, isTrue,
+              reason: '$direction ${edge.id} has a diagonal segment');
+        }
+      }
+      final feedback = graph.edges.singleWhere((edge) => edge.id == 'rd');
+      expect(feedback.junctionPoints, hasLength(1));
+      final incoming = graph.edges.singleWhere((edge) => edge.id == 'sd');
+      expect(
+          FlowGeometry.pathIntersectsRect(
+              FlowGeometry.edgePathResult(incoming, nodes)!.path,
+              Rect.fromCircle(
+                  center: feedback.junctionPoints.single, radius: 1)),
+          isTrue);
+      final restored = FlowGraphSnapshot<Map<String, Object?>>.fromJson(
+        graph.toJson(encodeNodeData: (data) => data),
+        decodeNodeData: (data) => Map<String, Object?>.from(data as Map),
+      );
+      expect(
+          restored.edges.singleWhere((edge) => edge.id == 'rd').junctionPoints,
+          feedback.junctionPoints);
+    }
+  });
+
+  test('flowchart routing avoids an intervening node with right-angle segments',
+      () {
+    final doc = DiagramDocument.fromJson({
+      'schemaVersion': 1,
+      'diagramType': 'flowchart',
+      'layout': {'mode': 'preserve', 'direction': 'LR'},
+      'nodes': [
+        {
+          'id': 'a',
+          'label': 'A',
+          'position': {'x': 0, 'y': 0},
+          'size': {'width': 100, 'height': 80}
+        },
+        {
+          'id': 'block',
+          'label': 'Block',
+          'position': {'x': 180, 'y': -20},
+          'size': {'width': 100, 'height': 120}
+        },
+        {
+          'id': 'b',
+          'label': 'B',
+          'position': {'x': 400, 'y': 0},
+          'size': {'width': 100, 'height': 80}
+        },
+      ],
+      'edges': [
+        {'id': 'ab', 'source': 'a', 'target': 'b'}
+      ],
+    });
+    final graph = diagramToFlow(doc).snapshot;
+    final nodes = {for (final node in graph.nodes) node.id: node};
+    final edge = graph.edges.single;
+    final points = [
+      FlowGeometry.edgeSource(edge, nodes)!,
+      ...edge.controlPoints,
+      FlowGeometry.edgeTarget(edge, nodes)!
+    ];
+    for (var i = 1; i < points.length; i++) {
+      final delta = points[i] - points[i - 1];
+      expect(delta.dx.abs() < .01 || delta.dy.abs() < .01, isTrue);
+    }
+    final path = FlowGeometry.edgePathResult(edge, nodes)!.path;
+    expect(
+        FlowGeometry.pathIntersectsRect(
+            path, FlowGeometry.nodeRect(nodes['block']!, nodes)),
+        isFalse);
+  });
   test('automatic layout follows the configured node order', () {
     for (final (order, firstId) in [
       ('input', 'b'),
@@ -58,8 +222,7 @@ void main() {
       final byId = {for (final node in graph.nodes) node.id: node};
       final a = FlowGeometry.edgePathResult(graph.edges.first, byId)!;
       final b = FlowGeometry.edgePathResult(graph.edges.last, byId)!;
-      expect(
-          graph.edges.every((edge) => edge.controlPoints.length == 2), isTrue);
+      expect(graph.edges.every((edge) => edge.sourceHandleId != null), isTrue);
       expect((a.labelPosition - b.labelPosition).distance, greaterThan(20));
       expect(
           FlowGraphValidator.validate(nodes: graph.nodes, edges: graph.edges),
@@ -88,7 +251,7 @@ void main() {
     });
     final edges = diagramToFlow(doc).snapshot.edges;
     expect(edges.first.sourceHandleId, 'custom');
-    expect(edges.every((edge) => edge.controlPoints.isEmpty), isTrue);
+    expect(edges.last.targetHandleId, isNull);
   });
 
   test('long cycle edges avoid the node between their endpoints', () {

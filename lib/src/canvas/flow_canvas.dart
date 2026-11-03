@@ -944,6 +944,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
             edge.stepPosition,
             edge.cornerRadius,
             edge.controlPoints,
+            edge.junctionPoints,
           ]),
       ]);
 
@@ -1135,6 +1136,7 @@ class _FFlowCanvasState<T> extends State<FFlowCanvas<T>>
                 handle.type,
                 handle.position,
                 handle.offset,
+                handle.anchor,
               ))),
         ),
       );

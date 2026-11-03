@@ -61,6 +61,48 @@ class FlowEdgesPainter<T> extends CustomPainter {
       );
     }
 
+    for (final edge in edges) {
+      if (edge.hidden || edge.junctionPoints.isEmpty) continue;
+      final geometry = geometryCache?.result(edge, _nodesById) ??
+          FlowGeometry.edgePathResult(edge, _nodesById);
+      if (geometry == null) continue;
+      final color = selectedEdgeIds.contains(edge.id)
+          ? const Color(0xFFB4A9FF)
+          : edge.color ?? defaultColor;
+      for (final point in edge.junctionPoints) {
+        canvas.drawCircle(point, 3, Paint()..color = color);
+        if (edge.markerEnd == FlowEdgeMarker.arrowClosed ||
+            edge.markerEnd == FlowEdgeMarker.arrow) {
+          final index = edge.controlPoints.indexOf(point);
+          if (index < 0) continue;
+          final previous = index == 0
+              ? geometry.sourceAnchor
+              : edge.controlPoints[index - 1];
+          final delta = point - previous;
+          final length = delta.distance;
+          if (length < 24) continue;
+          final direction = delta / length;
+          final tip = point - direction * math.min(36, length / 3);
+          final normal = Offset(-direction.dy, direction.dx) * 4;
+          final base = tip - direction * 9;
+          final arrow = Path()
+            ..moveTo(tip.dx, tip.dy)
+            ..lineTo(base.dx + normal.dx, base.dy + normal.dy)
+            ..lineTo(base.dx - normal.dx, base.dy - normal.dy);
+          if (edge.markerEnd == FlowEdgeMarker.arrowClosed) {
+            canvas.drawPath(arrow..close(), Paint()..color = color);
+          } else {
+            canvas.drawPath(
+                arrow,
+                Paint()
+                  ..color = color
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = 2);
+          }
+        }
+      }
+    }
+
     final source = previewStart;
     final target = previewTarget;
     if (source != null && target != null) {

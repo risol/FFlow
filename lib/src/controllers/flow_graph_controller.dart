@@ -181,6 +181,7 @@ class FlowGraphController<T> extends ChangeNotifier {
                   handle.type,
                   handle.position,
                   handle.offset,
+                  handle.anchor,
                 ))),
           ),
         for (final edge in edges)

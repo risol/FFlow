@@ -6,6 +6,100 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('junction markers remain aligned after export normalization',
+      (tester) async {
+    await tester.pumpWidget(const SizedBox());
+    final snapshot = FlowGraphSnapshot<String>(
+      nodes: const [
+        FlowNode(
+            id: 'a',
+            position: Offset(-100, -30),
+            data: 'a',
+            width: 100,
+            height: 80),
+        FlowNode(
+            id: 'b',
+            position: Offset(200, -30),
+            data: 'b',
+            width: 100,
+            height: 80),
+      ],
+      edges: const [
+        FlowEdge(
+            id: 'e',
+            sourceId: 'a',
+            targetId: 'b',
+            type: FlowEdgeType.straight,
+            markerEnd: FlowEdgeMarker.arrowClosed,
+            controlPoints: [Offset(20, 10), Offset(100, 10)],
+            junctionPoints: [Offset(100, 10)])
+      ],
+      viewport: const FlowViewport(x: 0, y: 0, zoom: 1),
+    );
+    await tester.runAsync(() async {
+      final result = await renderFlowSnapshot<String>(
+        view: tester.view,
+        snapshot: snapshot,
+        pixelRatio: 1,
+        nodeBuilder: (_, node, selected) => const ColoredBox(color: Colors.red),
+      );
+      final codec = await ui.instantiateImageCodec(result.bytes);
+      final frame = await codec.getNextFrame();
+      final pixels =
+          (await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      final x = (100 - result.graphBounds.left + 32).round();
+      final y = (10 - result.graphBounds.top + 32).round();
+      int redAt(int dy) =>
+          pixels.getUint8(((y + dy) * frame.image.width + x) * 4);
+      expect(redAt(-2), lessThan(200));
+      expect(redAt(-6), 255);
+      var arrowPixels = 0;
+      for (var graphX = 63; graphX <= 73; graphX++) {
+        for (var graphY = 12; graphY <= 14; graphY++) {
+          final px = (graphX - result.graphBounds.left + 32).round();
+          final py = (graphY - result.graphBounds.top + 32).round();
+          if (pixels.getUint8((py * frame.image.width + px) * 4) < 200) {
+            arrowPixels++;
+          }
+        }
+      }
+      expect(arrowPixels, greaterThan(0),
+          reason: 'The incoming branch needs a direction arrow');
+      frame.image.dispose();
+      codec.dispose();
+    });
+  });
+  testWidgets('export hides editor connection handles', (tester) async {
+    await tester.pumpWidget(const SizedBox());
+    final snapshot = FlowGraphSnapshot<String>(
+      nodes: const [
+        FlowNode(
+            id: 'a', position: Offset.zero, data: 'a', width: 100, height: 80),
+      ],
+      edges: const [],
+      viewport: const FlowViewport(x: 0, y: 0, zoom: 1),
+    );
+    await tester.runAsync(() async {
+      final result = await renderFlowSnapshot<String>(
+        view: tester.view,
+        snapshot: snapshot,
+        pixelRatio: 1,
+        backgroundColor: Colors.transparent,
+        nodeBuilder: (_, node, selected) => const ColoredBox(color: Colors.red),
+      );
+      final codec = await ui.instantiateImageCodec(result.bytes);
+      final frame = await codec.getNextFrame();
+      final pixels =
+          (await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      for (final x in [-5, 105]) {
+        final px = (x - result.graphBounds.left + 32).round();
+        final py = (40 - result.graphBounds.top + 32).round();
+        expect(pixels.getUint8((py * frame.image.width + px) * 4 + 3), 0);
+      }
+      frame.image.dispose();
+      codec.dispose();
+    });
+  });
   testWidgets('long edge labels avoid covering node interiors', (tester) async {
     await tester.pumpWidget(const SizedBox());
     final snapshot = FlowGraphSnapshot<String>(

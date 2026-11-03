@@ -152,6 +152,7 @@ extension _FlowCanvasChanges<T> on _FFlowCanvasState<T> {
           left.type != right.type ||
           left.position != right.position ||
           left.offset != right.offset ||
+          left.anchor != right.anchor ||
           left.connectable != right.connectable ||
           left.connectableStart != right.connectableStart ||
           left.connectableEnd != right.connectableEnd ||
@@ -193,5 +194,14 @@ extension _FlowCanvasChanges<T> on _FFlowCanvasState<T> {
       a.ariaLabel == b.ariaLabel &&
       a.focusable == b.focusable &&
       a.floating == b.floating &&
-      a.zIndex == b.zIndex;
+      a.zIndex == b.zIndex &&
+      _sameJunctionPoints(a.junctionPoints, b.junctionPoints);
+
+  bool _sameJunctionPoints(List<Offset> a, List<Offset> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }

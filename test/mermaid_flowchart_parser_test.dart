@@ -4,6 +4,16 @@ import 'package:fflow/fflow.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'supports explicit stadium terminators without changing circle or rectangle shapes',
+      () {
+    final graph = parseMermaidFlowchart(
+        'flowchart TB; a([开始]) --> b[处理] --> c((圆形)) --> d([结束])');
+    expect(graph.nodes.map((node) => node.type),
+        ['stadium', 'rectangle', 'circle', 'stadium']);
+    expect(graph.nodes.first.label, '开始');
+    expect(graph.nodes.last.label, '结束');
+  });
   test('parses shapes, labels, directions, chained edges, comments and cycles',
       () {
     final graph = parseMermaidFlowchart('''
@@ -80,7 +90,7 @@ retry --> decision; done --- audit["归档;留存"] %% comment
     fails('flowchart LR\nA[unterminated\nB', 2, 'Unterminated label');
     fails('flowchart LR\nsubgraph X\nend', 2, 'Unsupported Mermaid directive');
     fails('flowchart LR\nA -.-> B', 2, 'Expected -->');
-    fails('flowchart LR\nA([stadium])', 2, 'Unsupported node shape');
+    fails('flowchart LR\nA[/unsupported/]', 2, 'Unsupported node shape');
     fails('flowchart LR\nA[/parallelogram/]', 2, 'Unsupported node shape');
     fails('flowchart XX\nA', 1, 'Unsupported flowchart direction');
   });

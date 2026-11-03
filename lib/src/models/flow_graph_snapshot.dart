@@ -55,6 +55,11 @@ class FlowGraphSnapshot<T> {
                     'type': handle.type.name,
                     'position': handle.position.name,
                     'offset': handle.offset,
+                    if (handle.anchor != null)
+                      'anchor': {
+                        'x': handle.anchor!.dx,
+                        'y': handle.anchor!.dy
+                      },
                     'connectable': handle.connectable,
                     'connectableStart': handle.connectableStart,
                     'connectableEnd': handle.connectableEnd,
@@ -130,6 +135,11 @@ class FlowGraphSnapshot<T> {
                 for (final point in edge.controlPoints)
                   {'x': point.dx, 'y': point.dy},
               ],
+              if (edge.junctionPoints.isNotEmpty)
+                'junctionPoints': [
+                  for (final point in edge.junctionPoints)
+                    {'x': point.dx, 'y': point.dy},
+                ],
               if (includeSelection) 'selected': edge.selected,
               'data': encodeEdgeData == null
                   ? edge.data
@@ -154,12 +164,17 @@ class FlowGraphSnapshot<T> {
       final handles =
           (map['handles'] as List<Object?>? ?? const []).map((entry) {
         final handle = entry! as Map<String, Object?>;
+        final anchor = handle['anchor'] as Map<String, Object?>?;
         return FlowHandle(
           id: handle['id']! as String,
           type: FlowHandleType.values.byName(handle['type']! as String),
           position:
               FlowHandlePosition.values.byName(handle['position']! as String),
           offset: (handle['offset'] as num? ?? 0.5).toDouble(),
+          anchor: anchor == null
+              ? null
+              : Offset((anchor['x'] as num).toDouble(),
+                  (anchor['y'] as num).toDouble()),
           connectable: handle['connectable'] as bool? ?? true,
           connectableStart: handle['connectableStart'] as bool? ?? true,
           connectableEnd: handle['connectableEnd'] as bool? ?? true,
@@ -230,6 +245,12 @@ class FlowGraphSnapshot<T> {
                 (point['y'] as num).toDouble(),
               ))
           .toList(growable: false);
+      final junctionPoints = (map['junctionPoints'] as List<Object?>? ??
+              const [])
+          .map((point) => point! as Map<String, Object?>)
+          .map((point) => Offset(
+              (point['x'] as num).toDouble(), (point['y'] as num).toDouble()))
+          .toList(growable: false);
       return FlowEdge(
         id: map['id']! as String,
         sourceId: map['source']! as String,
@@ -271,6 +292,7 @@ class FlowGraphSnapshot<T> {
         floating: map['floating'] as bool? ?? false,
         zIndex: (map['zIndex'] as num? ?? 0).toInt(),
         controlPoints: controlPoints,
+        junctionPoints: junctionPoints,
         data:
             decodeEdgeData == null ? map['data'] : decodeEdgeData(map['data']),
       );

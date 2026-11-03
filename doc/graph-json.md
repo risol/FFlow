@@ -33,14 +33,22 @@ For automatic layout, `layout.nodeOrder` can be `input` (the default), `id`,
 or `label`. ID and label ordering use Dart string comparison, with IDs breaking
 label ties. This changes layout order without changing the document's original
 node serialization order.
+Flowchart connections use straight or orthogonal segments by default; bounded
+obstacle-aware routing applies to graphs of up to 500 nodes and 1,000 edges.
 The FFlow adapter carries each node and edge's original data and extra fields
 and places the complete document in the `fflowDiagram` snapshot namespace.
+Flowchart export uses straight or orthogonal connections. For reciprocal
+connections on diamonds and ellipses, the generated FFlow handles may include
+a normalized `anchor` point on the outline; snapshots preserve that point.
+Simple decision/retry loops may also include a `junctionPoints` entry on an
+edge to mark where the return path merges with the incoming main line. These
+points are stored in graph coordinates and survive FFlow snapshot round trips.
 
 The current Windows worker supports light, dark and print themes; titles; node
 `background`, `foreground`, `border` colors; edge `color` and `strokeWidth`;
 explicit ports; and directed or `undirected` edges. Colors use `#RRGGBB` or
 `#AARRGGBB`. Node `type` or `style.shape` can select `rectangle`, `rounded`,
-`diamond`/`decision`, or `circle`/`ellipse`; an ellipse fills the declared
+`diamond`/`decision`, `stadium`/`terminal`, or `circle`/`ellipse`; an ellipse fills the declared
 node rectangle, so use a square size for a circle. Other node types, relation
 types and style fields are preserved
 but do not yet have dedicated visual renderers. Arbitrary business JSON is not

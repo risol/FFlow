@@ -149,6 +149,12 @@ abstract final class FlowGeometry {
             node.height,
           )
         : nodeRect(node, nodes);
+    if (handle.anchor != null) {
+      return Offset(
+        rect.left + rect.width * handle.anchor!.dx.clamp(0.0, 1.0),
+        rect.top + rect.height * handle.anchor!.dy.clamp(0.0, 1.0),
+      );
+    }
     final offset = handle.offset.clamp(0.0, 1.0).toDouble();
     return switch (handle.position) {
       FlowHandlePosition.left =>

@@ -127,6 +127,7 @@ void runSnapshotWorker(List<String> args) {
           (document == null && snapshotTheme == 'dark');
       final printTheme = document?.theme == DiagramTheme.print ||
           (document == null && snapshotTheme == 'print');
+      final standardFlowchart = document?.type == DiagramType.flowchart;
       final declaredFormat = request['inputFormat'];
       final maxWidth = request['maxWidth'] as int? ?? 8192;
       final maxHeight = request['maxHeight'] as int? ?? 8192;
@@ -164,13 +165,39 @@ void runSnapshotWorker(List<String> args) {
         fontFamily: 'FFlowNotoSansSC',
         backgroundColor: transparent
             ? Colors.transparent
-            : (dark ? const Color(0xff12151d) : Colors.white),
-        titleColor: dark ? Colors.white : Colors.black,
+            : (dark
+                ? const Color(0xff121923)
+                : printTheme
+                    ? Colors.white
+                    : standardFlowchart
+                        ? Colors.white
+                        : const Color(0xfff8fafc)),
+        titleColor: dark ? const Color(0xffedf3fa) : const Color(0xff1e293b),
         edgeColor: dark
-            ? const Color(0xffc5d2e2)
+            ? const Color(0xffa8b9ce)
             : printTheme
                 ? Colors.black
-                : const Color(0xff4e5d70),
+                : standardFlowchart
+                    ? const Color(0xff303b48)
+                    : const Color(0xff71839a),
+        edgeLabelBackgroundColor: dark
+            ? (standardFlowchart
+                ? const Color(0xff121923)
+                : const Color(0xff253344))
+            : Colors.white,
+        edgeLabelTextColor: dark
+            ? const Color(0xffe0eaf4)
+            : printTheme
+                ? Colors.black
+                : standardFlowchart
+                    ? const Color(0xff202832)
+                    : const Color(0xff43556d),
+        edgeLabelBorderColor: dark
+            ? const Color(0xff45566c)
+            : printTheme
+                ? Colors.black
+                : const Color(0xffd8e2ed),
+        plainEdgeLabels: standardFlowchart,
         edgeLabelOutset: document?.type == DiagramType.er ? 36 : 0,
         edgeLabelBuilder: document?.type == DiagramType.er
             ? (context, edge) {
@@ -192,7 +219,9 @@ void runSnapshotWorker(List<String> args) {
                           border: Border.all(
                               color: dark
                                   ? const Color(0xffb5cce4)
-                                  : const Color(0xff68778b))),
+                                  : printTheme
+                                      ? Colors.black
+                                      : const Color(0xff68778b))),
                       child: Text(edge.label ?? '',
                           textAlign: TextAlign.center,
                           maxLines: 2,
@@ -213,6 +242,11 @@ void runSnapshotWorker(List<String> args) {
           final rawDiagram = data is Map ? data['diagram'] : null;
           final rawStyle = rawDiagram is Map ? rawDiagram['style'] : null;
           final style = rawStyle is Map ? rawStyle : const {};
+          final shapeValue = style['shape'];
+          final shape = shapeValue is String ? shapeValue : node.type;
+          final diamond = shape == 'diamond' || shape == 'decision';
+          final ellipse = shape == 'circle' || shape == 'ellipse';
+          final stadium = shape == 'stadium' || shape == 'terminal';
           Color getColor(String key, Color fallback) {
             final raw = style[key];
             if (raw is! String ||
@@ -230,14 +264,34 @@ void runSnapshotWorker(List<String> args) {
                   ? const Color(0xff273447)
                   : printTheme
                       ? Colors.white
-                      : const Color(0xffe7f0fb));
+                      : document?.type == DiagramType.er
+                          ? const Color(0xffe7f0fb)
+                          : standardFlowchart
+                              ? (diamond
+                                  ? const Color(0xfffff4c2)
+                                  : stadium
+                                      ? const Color(0xffe7f0fb)
+                                      : const Color(0xffe8f5e5))
+                              : diamond
+                                  ? const Color(0xffeff6ff)
+                                  : ellipse
+                                      ? const Color(0xffeef8f4)
+                                      : Colors.white);
           final border = getColor(
               'border',
               dark
                   ? const Color(0xffb5cce4)
                   : printTheme
                       ? Colors.black
-                      : const Color(0xff275684));
+                      : document?.type == DiagramType.er
+                          ? const Color(0xff275684)
+                          : standardFlowchart
+                              ? const Color(0xff303b48)
+                              : diamond
+                                  ? const Color(0xff98b5d9)
+                                  : ellipse
+                                      ? const Color(0xff8ebda8)
+                                      : const Color(0xffc4d1df));
           final foreground = getColor(
               'foreground',
               dark
@@ -275,19 +329,30 @@ void runSnapshotWorker(List<String> args) {
                 foreground: foreground,
                 border: border);
           }
-          final shapeValue = style['shape'];
-          final shape = shapeValue is String ? shapeValue : node.type;
-          final diamond = shape == 'diamond' || shape == 'decision';
-          final ellipse = shape == 'circle' || shape == 'ellipse';
           final ShapeBorder outline = diamond || ellipse
               ? _FlowShapeBorder(
                   diamond: diamond, side: BorderSide(color: border))
-              : RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(shape == 'rectangle' ? 0 : 6),
-                  side: BorderSide(color: border));
+              : stadium
+                  ? StadiumBorder(side: BorderSide(color: border))
+                  : RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(shape == 'rectangle'
+                          ? (standardFlowchart ? 0 : 6)
+                          : 12),
+                      side: BorderSide(color: border));
           return DecoratedBox(
-            decoration: ShapeDecoration(color: background, shape: outline),
+            decoration: ShapeDecoration(
+              color: background,
+              shape: outline,
+              shadows: printTheme || transparent || standardFlowchart
+                  ? null
+                  : [
+                      BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: dark ? 0.14 : 0.055),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3))
+                    ],
+            ),
             child: Padding(
               padding: diamond
                   ? EdgeInsets.symmetric(
@@ -299,7 +364,12 @@ void runSnapshotWorker(List<String> args) {
                       textAlign: TextAlign.center,
                       maxLines: 4,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: foreground, fontSize: 14))),
+                      style: TextStyle(
+                          color: foreground,
+                          fontSize: 15,
+                          fontWeight: standardFlowchart
+                              ? FontWeight.w500
+                              : FontWeight.w600))),
             ),
           );
         },

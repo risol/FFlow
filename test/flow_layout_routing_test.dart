@@ -29,6 +29,24 @@ FlowNode<String> _node(
     );
 
 void main() {
+  test('orthogonal routing exits a custom outline anchor on its declared side',
+      () async {
+    final source = _node('source').copyWith(handles: const [
+      FlowHandle(
+          id: 'out',
+          type: FlowHandleType.source,
+          position: FlowHandlePosition.right,
+          anchor: Offset(.8, .2)),
+    ]);
+    final edges = await FlowGraphRouting.routeEdges<String>(
+      nodes: [source, _node('target', position: const Offset(300, 0))],
+      edges: const [FlowEdge(id: 'e', sourceId: 'source', targetId: 'target')],
+      router: const FlowOrthogonalEdgeRouter(),
+    );
+    expect(edges.single.controlPoints, isNotEmpty);
+    expect(edges.single.controlPoints.first.dx, greaterThanOrEqualTo(100));
+    expect(edges.single.controlPoints.first.dy, closeTo(12, .001));
+  });
   group('FlowLayeredLayoutEngine', () {
     test('places directed nodes in successive layers', () {
       final nodes = [_node('a'), _node('b'), _node('c')];

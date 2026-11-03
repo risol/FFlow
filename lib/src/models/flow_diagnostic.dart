@@ -95,6 +95,21 @@ abstract final class FlowGraphValidator {
       }
       final handleIds = <String>{};
       for (final handle in node.resolvedHandles) {
+        final anchor = handle.anchor;
+        if (anchor != null &&
+            (!_finite(anchor.dx) ||
+                !_finite(anchor.dy) ||
+                anchor.dx < 0 ||
+                anchor.dx > 1 ||
+                anchor.dy < 0 ||
+                anchor.dy > 1)) {
+          diagnostics.add(FlowDiagnostic(
+            code: 'invalid-handle-anchor',
+            entityId: node.id,
+            message:
+                'Handle anchor must contain normalized finite coordinates.',
+          ));
+        }
         if (!handleIds.add(handle.id)) {
           diagnostics.add(FlowDiagnostic(
             code: 'duplicate-handle-id',
@@ -185,6 +200,8 @@ abstract final class FlowGraphValidator {
           !_finite(edge.stepPosition) ||
           !_finite(edge.cornerRadius) ||
           edge.controlPoints
+              .any((point) => !_finite(point.dx) || !_finite(point.dy)) ||
+          edge.junctionPoints
               .any((point) => !_finite(point.dx) || !_finite(point.dy))) {
         diagnostics.add(FlowDiagnostic(
           code: 'invalid-edge-geometry',

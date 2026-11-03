@@ -1,5 +1,7 @@
 # Experimental isolated desktop snapshot renderer
 
+![Approval flow rendered with the Windows worker](images/hidden-rendering-approval.png)
+
 `package:fflow/fflow_desktop.dart` provides `FlowIsolatedRenderService` for a
 desktop host that can launch the Windows worker in `apps/hidden_render_poc`.
 Each task runs in a new hidden Flutter process; a service instance queues its
@@ -53,7 +55,8 @@ obstacle-aware Manhattan router for non-self edges that have no explicit
 control points. Existing routes and self-loops remain intact. This option is
 limited to 500 nodes and 1,000 edges and considers at most 32 nearby obstacles
 per edge; dense graphs can still have overlaps. The default `automatic`
-preserves the adapter's built-in paths. Diagnostics report routing time.
+preserves the adapter's built-in paths, which are orthogonal for flowcharts.
+Diagnostics report routing time.
 
 For default edge labels on graphs of at most 1,000 nodes and 2,000 edges,
 export also tries nearby positions when a label overlaps a node or a previous
@@ -232,3 +235,8 @@ image size differ from the positioned snapshots above.
 Peak RSS is the worker-reported process measurement; it does not include GPU
 memory or other processes. These small samples are diagnostic observations,
 not a guarantee for other graphs or machines.
+
+After switching flowcharts to orthogonal routing by default, a repeat of the
+500-node, 477-edge automatic-layout case took 2.89 seconds end to end, with
+91 ms reported for layout and routing together. This single result uses the
+same synthetic graph and includes process startup.

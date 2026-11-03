@@ -47,6 +47,7 @@ class FlowEdge {
     this.floating = false,
     this.zIndex = 0,
     this.controlPoints = const [],
+    this.junctionPoints = const [],
   });
 
   final String id;
@@ -105,6 +106,9 @@ class FlowEdge {
   /// the edge path passes through each point in order.
   final List<Offset> controlPoints;
 
+  /// Explicit merge points drawn on this edge, in graph coordinates.
+  final List<Offset> junctionPoints;
+
   bool get canReconnectSource =>
       reconnectable &&
       reconnectableSource &&
@@ -152,6 +156,7 @@ class FlowEdge {
     bool? floating,
     int? zIndex,
     List<Offset>? controlPoints,
+    List<Offset>? junctionPoints,
   }) =>
       FlowEdge(
         id: id ?? this.id,
@@ -203,5 +208,6 @@ class FlowEdge {
         floating: floating ?? this.floating,
         zIndex: zIndex ?? this.zIndex,
         controlPoints: controlPoints ?? this.controlPoints,
+        junctionPoints: junctionPoints ?? this.junctionPoints,
       );
 }

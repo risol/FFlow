@@ -43,8 +43,10 @@ class FlowOrthogonalEdgeRouter implements FlowEdgeRouter {
         targetAnchor ?? _defaultAnchor(sourceBounds, targetBounds, false);
     if (source == target) return FlowEdgeRoute(const []);
     final escapeDistance = math.max(1.0, routeClearance);
-    final start = _escapePoint(sourceBounds, source, escapeDistance);
-    final end = _escapePoint(targetBounds, target, escapeDistance);
+    final start = _escapePoint(sourceBounds, source, escapeDistance,
+        options['_sourceAnchorSide'] as String?);
+    final end = _escapePoint(targetBounds, target, escapeDistance,
+        options['_targetAnchorSide'] as String?);
 
     final corridor = Rect.fromPoints(start, end).inflate(
       math.max(64.0, routeClearance * 4),
@@ -163,7 +165,20 @@ class FlowOrthogonalEdgeRouter implements FlowEdgeRouter {
         _removeCollinear(source, [start, ...inner, end], target));
   }
 
-  Offset _escapePoint(Rect bounds, Offset anchor, double distance) {
+  Offset _escapePoint(
+      Rect bounds, Offset anchor, double distance, String? side) {
+    if (side != null) {
+      switch (side) {
+        case 'left':
+          return Offset(bounds.left - distance, anchor.dy);
+        case 'right':
+          return Offset(bounds.right + distance, anchor.dy);
+        case 'top':
+          return Offset(anchor.dx, bounds.top - distance);
+        case 'bottom':
+          return Offset(anchor.dx, bounds.bottom + distance);
+      }
+    }
     const tolerance = 0.001;
     if ((anchor.dx - bounds.left).abs() <= tolerance) {
       return anchor + Offset(-distance, 0);
@@ -183,8 +198,8 @@ class FlowOrthogonalEdgeRouter implements FlowEdgeRouter {
       (anchor.dy - bounds.top).abs(),
       (anchor.dy - bounds.bottom).abs(),
     ];
-    final side = distances.indexOf(distances.reduce(math.min));
-    return switch (side) {
+    final nearest = distances.indexOf(distances.reduce(math.min));
+    return switch (nearest) {
       0 => anchor + Offset(-distance, 0),
       1 => anchor + Offset(distance, 0),
       2 => anchor + Offset(0, -distance),

@@ -2,6 +2,7 @@ import 'package:flutter/painting.dart';
 
 import '../geometry/flow_geometry.dart';
 import '../models/flow_edge.dart';
+import '../models/flow_handle.dart';
 import '../models/flow_node.dart';
 import 'flow_extension_adapters.dart';
 
@@ -35,6 +36,10 @@ abstract final class FlowGraphRouting {
         routed.add(edge);
         continue;
       }
+      final sourceHandle = FlowGeometry.handleFor(
+          source, edge.sourceHandleId, FlowHandleType.source);
+      final targetHandle = FlowGeometry.handleFor(
+          target, edge.targetHandleId, edge.targetHandleType);
       final route = await router.route(
         edge: edge,
         sourceBounds: FlowGeometry.nodeRect(source, nodesById),
@@ -49,7 +54,13 @@ abstract final class FlowGraphRouting {
                 !_isAncestor(nodeId, target, nodesById))
               rect,
         ],
-        options: options,
+        options: {
+          ...options,
+          if (sourceHandle?.anchor != null)
+            '_sourceAnchorSide': sourceHandle!.position.name,
+          if (targetHandle?.anchor != null)
+            '_targetAnchorSide': targetHandle!.position.name,
+        },
       );
       routed.add(route.applyTo(edge));
     }

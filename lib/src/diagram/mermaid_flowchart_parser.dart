@@ -60,7 +60,9 @@ class _MermaidParser {
       if (title != null) 'title': title,
       'layout': {
         'mode': 'auto',
-        'direction': direction == 'TD' ? 'TB' : direction
+        'direction': direction == 'TD' ? 'TB' : direction,
+        'nodeSpacing': 96,
+        'layerSpacing': 112,
       },
       'metadata': {'sourceFormat': 'mermaid'},
       'nodes': [for (final node in nodes.values) node.toJson()],
@@ -119,6 +121,9 @@ class _MermaidParser {
       }
       shape = 'rectangle';
       label = input.labelUntil(']');
+    } else if (input.take('([', consume: true)) {
+      shape = 'stadium';
+      label = input.labelUntil('])');
     } else if (input.take('((', consume: true)) {
       shape = 'circle';
       label = input.labelUntil('))');
@@ -176,6 +181,7 @@ class _Node {
         'id': id,
         'type': shape,
         'label': label,
+        if (shape == 'stadium') 'size': {'width': 180, 'height': 64},
         if (shape == 'circle') 'size': {'width': 120, 'height': 120},
         if (shape == 'diamond') 'size': {'width': 180, 'height': 120},
       };

@@ -70,15 +70,17 @@ class FlowEdgeGeometryCache {
         ? null
         : FlowGeometry.handleFor(
             target, edge.targetHandleId, edge.targetHandleType);
-    return Object.hash(
+    return Object.hashAll([
       sourceRect,
       targetRect,
       sourceHandle?.id,
       sourceHandle?.position,
       sourceHandle?.offset,
+      sourceHandle?.anchor,
       targetHandle?.id,
       targetHandle?.position,
       targetHandle?.offset,
+      targetHandle?.anchor,
       edge.sourceId,
       edge.targetId,
       edge.sourceHandleId,
@@ -90,7 +92,7 @@ class FlowEdgeGeometryCache {
       edge.stepPosition,
       edge.cornerRadius,
       Object.hashAll(edge.controlPoints),
-    );
+    ]);
   }
 }
 

@@ -146,9 +146,9 @@ Future<void> main(List<String> args) async {
   }
   const mermaid = '''
 flowchart TB
-start[开始] --> decision{是否通过}
-decision -->|是| done((完成))
-decision -->|否| retry(重试)
+start([开始]) --> decision{是否通过}
+decision -->|是| done([完成])
+decision -->|否| retry[重试]
 retry --> decision
 ''';
   final mermaidImage =

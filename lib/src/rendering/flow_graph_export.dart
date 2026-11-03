@@ -49,6 +49,10 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
   Color? titleColor,
   String fontFamily = 'Roboto',
   Color edgeColor = const Color(0xff727c90),
+  Color edgeLabelBackgroundColor = Colors.white,
+  Color edgeLabelTextColor = const Color(0xff42536a),
+  Color edgeLabelBorderColor = const Color(0xffd9e3ed),
+  bool plainEdgeLabels = false,
   double gridSpacing = 0,
   TextDirection textDirection = TextDirection.ltr,
   String? title,
@@ -138,6 +142,9 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
     final geometry = FlowGeometry.edgePathResult(edge, byId);
     if (geometry == null) continue;
     include(geometry.bounds.inflate(math.max(24, edge.strokeWidth / 2 + 2)));
+    for (final point in edge.junctionPoints) {
+      include(Rect.fromCircle(center: point, radius: 4));
+    }
     if (edge.label != null) {
       if (edge.label!.length > 10000) {
         throw StateError('IMAGE_TOO_LARGE: edge label ${edge.id} is too long');
@@ -145,16 +152,39 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
       final painter = TextPainter(
         text: TextSpan(
             text: edge.label,
-            style: TextStyle(fontFamily: fontFamily, fontSize: 10)),
+            style: TextStyle(
+                fontFamily: fontFamily,
+                fontSize:
+                    edgeLabelBuilder == null ? (plainEdgeLabels ? 12 : 11) : 10,
+                fontWeight: edgeLabelBuilder == null
+                    ? (plainEdgeLabels ? FontWeight.w500 : FontWeight.w600)
+                    : FontWeight.normal)),
         textDirection: textDirection,
       )..layout();
-      final labelSize = Size(painter.width + 16, painter.height + 8);
+      final labelSize = edgeLabelBuilder == null
+          ? Size(painter.width + (plainEdgeLabels ? 8 : 18),
+              painter.height + (plainEdgeLabels ? 4 : 10))
+          : Size(painter.width + 16, painter.height + 8);
       painter.dispose();
       final originalLabel = Rect.fromCenter(
           center: geometry.labelPosition,
           width: labelSize.width,
           height: labelSize.height);
       var labelRect = originalLabel;
+      if (plainEdgeLabels &&
+          edgeLabelBuilder == null &&
+          geometry.metrics.isNotEmpty) {
+        final metric = geometry.metrics.first;
+        final tangent = metric.getTangentForOffset(metric.length / 2);
+        if (tangent != null) {
+          final horizontal = tangent.vector.dx.abs() >= tangent.vector.dy.abs();
+          final preferred = horizontal
+              ? Offset(0, -labelSize.height / 2 - 4)
+              : Offset(labelSize.width / 2 + 4, 0);
+          labelOffsets[edge.id] = preferred;
+          labelRect = originalLabel.shift(preferred);
+        }
+      }
       if (placeLabels) {
         bool clear(Rect candidate) =>
             !labelObstacles.any(candidate.overlaps) &&
@@ -232,7 +262,8 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
   final localEdges = [
     for (final edge in snapshot.edges)
       edge.copyWith(
-          controlPoints: [for (final p in edge.controlPoints) p + shift]),
+          controlPoints: [for (final p in edge.controlPoints) p + shift],
+          junctionPoints: [for (final p in edge.junctionPoints) p + shift]),
   ];
   if (gridSpacing > 0 &&
       ((logicalSize.width + 512) / gridSpacing) *
@@ -283,26 +314,32 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
                   backgroundColor: backgroundColor,
                   edgeColor: edgeColor,
                   edgeLabelBuilder: edgeLabelBuilder ??
-                      (labelOffsets.isEmpty
-                          ? null
-                          : (context, edge) => Transform.translate(
-                                offset: labelOffsets[edge.id] ?? Offset.zero,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xff202633),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: const Color(0xff394151)),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 3),
-                                    child: Text(edge.label!,
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 10)),
-                                  ),
-                                ),
-                              )),
+                      (context, edge) => Transform.translate(
+                            offset: labelOffsets[edge.id] ?? Offset.zero,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: edgeLabelBackgroundColor,
+                                borderRadius: plainEdgeLabels
+                                    ? null
+                                    : BorderRadius.circular(7),
+                                border: plainEdgeLabels
+                                    ? null
+                                    : Border.all(color: edgeLabelBorderColor),
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: plainEdgeLabels ? 4 : 8,
+                                    vertical: plainEdgeLabels ? 2 : 4),
+                                child: Text(edge.label!,
+                                    style: TextStyle(
+                                        color: edgeLabelTextColor,
+                                        fontSize: plainEdgeLabels ? 12 : 11,
+                                        fontWeight: plainEdgeLabels
+                                            ? FontWeight.w500
+                                            : FontWeight.w600)),
+                              ),
+                            ),
+                          ),
                   gridSpacing: gridSpacing,
                   defaultViewport: FlowViewport(
                       x: padding + (logicalSize.width - graphWidth) / 2,

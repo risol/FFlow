@@ -328,6 +328,19 @@ void main() {
   });
 
   group('FlowGraphValidator', () {
+    test('rejects non-finite or out-of-range custom handle anchors', () {
+      final node = _node('a', handles: const [
+        FlowHandle(
+            id: 'bad',
+            type: FlowHandleType.source,
+            position: FlowHandlePosition.right,
+            anchor: Offset(1.1, double.nan)),
+      ]);
+      final diagnostics =
+          FlowGraphValidator.validate(nodes: [node], edges: <FlowEdge>[]);
+      expect(diagnostics.map((item) => item.code),
+          contains('invalid-handle-anchor'));
+    });
     test('reports duplicate ids, missing entities, handles, cycles, and ranges',
         () {
       final a = _node('a', parentId: 'b', handles: const [

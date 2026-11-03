@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart';
+
 /// Which end of a connection handle can start or receive an edge.
 enum FlowHandleType { source, target }
 
@@ -11,6 +13,7 @@ class FlowHandle {
     required this.type,
     required this.position,
     this.offset = 0.5,
+    this.anchor,
     this.connectable = true,
     this.connectableStart = true,
     this.connectableEnd = true,
@@ -23,6 +26,10 @@ class FlowHandle {
 
   /// Position along the selected side, from 0.0 to 1.0.
   final double offset;
+
+  /// Optional normalized position within the node bounds, for handles on
+  /// non-rectangular outlines. When absent, [position] and [offset] apply.
+  final Offset? anchor;
   final bool connectable;
   final bool connectableStart;
   final bool connectableEnd;

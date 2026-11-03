@@ -31,3 +31,6 @@ used by `FlowIsolatedRenderService`; see `../../doc/isolated-desktop-rendering.m
 After building, run `dart run tool/worker_smoke.dart <worker.exe> <output.png>`
 to check the protocol. Add a positive third argument to run that many extra
 serial tasks and print the host process's sampled working set.
+
+To regenerate the approval-flow preview, run
+`dart run tool/render_preview.dart <worker.exe> <output.png> [light|dark|print]`.
