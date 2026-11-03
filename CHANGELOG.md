@@ -6,8 +6,18 @@ Notable changes to FFlow are recorded here. Entries stay under `Unreleased` unti
 
 ### Added
 
+- Desktop rendering entry points for Dart hosts and Flutter applications, plus reusable ER table and schema widgets.
+
+### Fixed
+
+- Correct package release metadata for the next patch release and improve long ER relationship labels and their placement.
+
+## 0.2.0
+
+### Added
+
 - Experimental Windows hidden rendering worker and Dart APIs for complete-graph PNG export, bounded file input/output, task limits, diagnostics, themes and optional orthogonal routing.
-- Versioned Graph JSON, Mermaid flowchart and PostgreSQL DDL adapters, ER table and relationship rendering, optional schema grouping, and cycle-routing improvements.
+- Versioned Graph JSON, Mermaid flowchart, PostgreSQL and MySQL DDL adapters, ER table and relationship rendering, optional schema grouping, and cycle-routing improvements.
 - Bundled Noto Sans SC font, Windows export goldens, integration and stress tools, and desktop rendering documentation.
 
 ### Changed

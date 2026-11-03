@@ -4,7 +4,6 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:fflow/diagram.dart';
 import 'package:fflow/fflow_desktop.dart';
 
 Future<void> sampleGcIfEnabled() async {
@@ -307,6 +306,20 @@ CREATE TABLE accounting.invoice (id bigint PRIMARY KEY, customer_id bigint REFER
       grouped.diagnostics['edgeCount'] != 1) {
     throw StateError('Schema grouping failed');
   }
+  const longErDdl = '''
+CREATE TABLE customers (tenant_identifier bigint, customer_identifier bigint,
+  region_identifier bigint, department_identifier bigint,
+  PRIMARY KEY (tenant_identifier, customer_identifier, region_identifier, department_identifier));
+CREATE TABLE orders (tenant_identifier bigint, billing_customer_identifier bigint,
+  billing_region_identifier bigint, billing_department_identifier bigint,
+  FOREIGN KEY (tenant_identifier, billing_customer_identifier, billing_region_identifier, billing_department_identifier)
+  REFERENCES customers (tenant_identifier, customer_identifier, region_identifier, department_identifier));
+''';
+  final longEr = await service.renderPostgresDdl(longErDdl, pixelRatio: 1);
+  if (longEr.diagnostics['edgeCount'] != 1) {
+    throw StateError('Long ER relationship rendering failed');
+  }
+  await File('${args[1]}.long-er.png').writeAsBytes(longEr.pngBytes);
   const mysqlDdl = '''
 CREATE TABLE `customers` (`id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=InnoDB;
 CREATE TABLE `orders` (`id` BIGINT PRIMARY KEY, `customer_id` BIGINT NOT NULL,

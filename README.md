@@ -13,6 +13,8 @@ This repository contains the SDK package at its root and a runnable workflow edi
 For experimental hidden Windows rendering and PNG export from snapshots,
 Graph JSON, Mermaid flowcharts, PostgreSQL DDL, or MySQL DDL, see
 [desktop rendering and integration](doc/isolated-desktop-rendering.md).
+The [desktop rendering API](doc/desktop-rendering-api.md) covers the Dart and
+Flutter entry points, input formats, options, results, and error handling.
 The [acceptance record](doc/desktop-rendering-acceptance.md) describes tested
 configurations and remaining limitations.
 

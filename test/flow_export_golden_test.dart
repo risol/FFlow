@@ -120,6 +120,55 @@ void main() {
       );
       await expectLater(crowdedImage.bytes,
           matchesGoldenFile('goldens/windows_crowded_labels.png'));
+
+      final longRelationships = FlowGraphSnapshot<String>(
+        nodes: const [
+          FlowNode(
+              id: 'a',
+              position: Offset.zero,
+              data: '订单',
+              width: 160,
+              height: 100),
+          FlowNode(
+              id: 'b',
+              position: Offset(260, 0),
+              data: '客户',
+              width: 160,
+              height: 100),
+        ],
+        edges: const [
+          FlowEdge(
+              id: 'one',
+              sourceId: 'a',
+              targetId: 'b',
+              label:
+                  'tenant_identifier, billing_customer_identifier, region_identifier, billing_department_identifier, legal_entity_identifier → tenant_identifier, customer_identifier, region_identifier, department_identifier, legal_entity_identifier'),
+          FlowEdge(
+              id: 'two',
+              sourceId: 'a',
+              targetId: 'b',
+              label:
+                  'tenant_identifier, shipping_customer_identifier, region_identifier → tenant_identifier, customer_identifier, region_identifier'),
+        ],
+        viewport: const FlowViewport(x: 0, y: 0, zoom: 1),
+      );
+      final erLabels = await renderFlowSnapshot<String>(
+        view: tester.view,
+        snapshot: longRelationships,
+        fontFamily: 'FFlowGoldenNotoSansSC',
+        pixelRatio: 1,
+        edgeLabelMaxWidth: 320,
+        compactEdgeLabels: true,
+        nodeBuilder: (_, node, selected) => DecoratedBox(
+          decoration: BoxDecoration(
+              color: const Color(0xffe7f0fb), border: Border.all()),
+          child: Center(
+              child:
+                  Text(node.data, style: const TextStyle(color: Colors.black))),
+        ),
+      );
+      await expectLater(erLabels.bytes,
+          matchesGoldenFile('goldens/windows_er_long_labels.png'));
     });
   }, skip: !Platform.isWindows);
 }

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:fflow/diagram.dart';
 import 'package:fflow/fflow_desktop.dart';
 
 /// Repeatable diagnostic benchmark, not a performance guarantee.

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fflow/diagram.dart';
 import 'package:fflow/fflow_desktop.dart';
 import 'package:fflow/src/desktop/atomic_file.dart';
 import 'package:path/path.dart' as p;

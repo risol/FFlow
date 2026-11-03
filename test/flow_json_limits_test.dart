@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:fflow/fflow_desktop.dart';
 import 'package:fflow/src/desktop/json_limits.dart';
-import 'package:fflow/src/diagram/json_depth.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

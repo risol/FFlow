@@ -53,6 +53,12 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
   Color edgeLabelTextColor = const Color(0xff42536a),
   Color edgeLabelBorderColor = const Color(0xffd9e3ed),
   bool plainEdgeLabels = false,
+
+  /// Wrap built-in edge labels within this width, including their padding.
+  double? edgeLabelMaxWidth,
+
+  /// Use the compact label appearance used by ER diagrams.
+  bool compactEdgeLabels = false,
   double gridSpacing = 0,
   TextDirection textDirection = TextDirection.ltr,
   String? title,
@@ -73,6 +79,8 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
       gridSpacing < 0 ||
       !edgeLabelOutset.isFinite ||
       edgeLabelOutset < 0 ||
+      (edgeLabelMaxWidth != null &&
+          (!edgeLabelMaxWidth.isFinite || edgeLabelMaxWidth <= 18)) ||
       maxNodes < 0 ||
       maxEdges < 0) {
     throw ArgumentError('Invalid graph export options');
@@ -154,16 +162,39 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
             text: edge.label,
             style: TextStyle(
                 fontFamily: fontFamily,
-                fontSize:
-                    edgeLabelBuilder == null ? (plainEdgeLabels ? 12 : 11) : 10,
+                fontSize: edgeLabelBuilder == null
+                    ? (compactEdgeLabels ? 10 : (plainEdgeLabels ? 12 : 11))
+                    : 10,
                 fontWeight: edgeLabelBuilder == null
-                    ? (plainEdgeLabels ? FontWeight.w500 : FontWeight.w600)
+                    ? (compactEdgeLabels
+                        ? FontWeight.normal
+                        : (plainEdgeLabels ? FontWeight.w500 : FontWeight.w600))
                     : FontWeight.normal)),
         textDirection: textDirection,
-      )..layout();
+        textAlign: compactEdgeLabels ? TextAlign.center : TextAlign.start,
+      )..layout(
+          maxWidth: edgeLabelBuilder == null && edgeLabelMaxWidth != null
+              ? edgeLabelMaxWidth -
+                  (plainEdgeLabels
+                      ? 8
+                      : compactEdgeLabels
+                          ? 14
+                          : 16)
+              : double.infinity);
       final labelSize = edgeLabelBuilder == null
-          ? Size(painter.width + (plainEdgeLabels ? 8 : 18),
-              painter.height + (plainEdgeLabels ? 4 : 10))
+          ? Size(
+              painter.width +
+                  (plainEdgeLabels
+                      ? 8
+                      : compactEdgeLabels
+                          ? 14
+                          : 18),
+              painter.height +
+                  (plainEdgeLabels
+                      ? 4
+                      : compactEdgeLabels
+                          ? 6
+                          : 10))
           : Size(painter.width + 16, painter.height + 8);
       painter.dispose();
       final originalLabel = Rect.fromCenter(
@@ -171,7 +202,7 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
           width: labelSize.width,
           height: labelSize.height);
       var labelRect = originalLabel;
-      if (plainEdgeLabels &&
+      if ((plainEdgeLabels || compactEdgeLabels) &&
           edgeLabelBuilder == null &&
           geometry.metrics.isNotEmpty) {
         final metric = geometry.metrics.first;
@@ -321,22 +352,43 @@ Future<FlowGraphPng> renderFlowSnapshot<T>({
                                 color: edgeLabelBackgroundColor,
                                 borderRadius: plainEdgeLabels
                                     ? null
-                                    : BorderRadius.circular(7),
+                                    : BorderRadius.circular(
+                                        compactEdgeLabels ? 4 : 7),
                                 border: plainEdgeLabels
                                     ? null
                                     : Border.all(color: edgeLabelBorderColor),
                               ),
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: plainEdgeLabels ? 4 : 8,
-                                    vertical: plainEdgeLabels ? 2 : 4),
-                                child: Text(edge.label!,
-                                    style: TextStyle(
-                                        color: edgeLabelTextColor,
-                                        fontSize: plainEdgeLabels ? 12 : 11,
-                                        fontWeight: plainEdgeLabels
-                                            ? FontWeight.w500
-                                            : FontWeight.w600)),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                    maxWidth:
+                                        edgeLabelMaxWidth ?? double.infinity),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: plainEdgeLabels
+                                          ? 4
+                                          : compactEdgeLabels
+                                              ? 7
+                                              : 8,
+                                      vertical: plainEdgeLabels
+                                          ? 2
+                                          : compactEdgeLabels
+                                              ? 3
+                                              : 4),
+                                  child: Text(edge.label!,
+                                      textAlign: compactEdgeLabels
+                                          ? TextAlign.center
+                                          : TextAlign.start,
+                                      style: TextStyle(
+                                          color: edgeLabelTextColor,
+                                          fontSize: compactEdgeLabels
+                                              ? 10
+                                              : (plainEdgeLabels ? 12 : 11),
+                                          fontWeight: compactEdgeLabels
+                                              ? FontWeight.normal
+                                              : plainEdgeLabels
+                                                  ? FontWeight.w500
+                                                  : FontWeight.w600)),
+                                ),
                               ),
                             ),
                           ),

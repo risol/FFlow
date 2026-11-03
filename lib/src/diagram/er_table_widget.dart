@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Static ER table node. Field ordering and flags come from the parsed schema.
+/// ER table node for a `diagramToFlow` snapshot or another FFlow node builder.
+///
+/// Each entry in [columns] may contain `name`, `type`, `nullable`,
+/// `primaryKey`, `foreignKey`, and `unique` fields, as produced by
+/// `ErSchema.toDiagram`. This widget paints within its parent's dimensions.
 class ErTableWidget extends StatelessWidget {
   const ErTableWidget(
       {super.key,
@@ -96,4 +100,35 @@ class ErTableWidget extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Container node for a schema group produced by `ErSchema.toDiagram`.
+class ErSchemaWidget extends StatelessWidget {
+  const ErSchemaWidget(
+      {super.key,
+      required this.label,
+      required this.foreground,
+      required this.border});
+
+  final String label;
+  final Color foreground, border;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: border),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(color: foreground, fontWeight: FontWeight.bold)),
+          ),
+        ),
+      );
 }

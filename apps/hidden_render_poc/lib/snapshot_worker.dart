@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -10,8 +9,6 @@ import 'package:fflow/fflow.dart';
 import 'package:fflow/fflow_capture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'er_table_widget.dart';
 
 /// Entry point for the experimental per-task Windows process protocol.
 void runSnapshotWorker(List<String> args) {
@@ -155,7 +152,6 @@ void runSnapshotWorker(List<String> args) {
           maxBytes > 64000000) {
         throw const FormatException('Invalid worker rendering limits');
       }
-      final nodesById = {for (final node in snapshot.nodes) node.id: node};
       phase = 'RENDER_INIT_ERROR';
       final fontLoader = FontLoader('FFlowNotoSansSC')
         ..addFont(rootBundle.load('assets/fonts/NotoSansSC.ttf'));
@@ -209,40 +205,8 @@ void runSnapshotWorker(List<String> args) {
                 ? Colors.black
                 : const Color(0xffd8e2ed),
         plainEdgeLabels: standardFlowchart,
-        edgeLabelOutset: document?.type == DiagramType.er ? 36 : 0,
-        edgeLabelBuilder: document?.type == DiagramType.er
-            ? (context, edge) {
-                final source = FlowGeometry.edgeSource(edge, nodesById);
-                final target = FlowGeometry.edgeTarget(edge, nodesById);
-                final available = source == null || target == null
-                    ? 160.0
-                    : math.max(
-                        60.0, math.min(220.0, (target - source).distance - 56));
-                return Transform.translate(
-                    offset: const Offset(0, -24),
-                    child: Container(
-                      constraints: BoxConstraints(maxWidth: available),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                          color: dark ? const Color(0xff202633) : Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                              color: dark
-                                  ? const Color(0xffb5cce4)
-                                  : printTheme
-                                      ? Colors.black
-                                      : const Color(0xff68778b))),
-                      child: Text(edge.label ?? '',
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: dark ? Colors.white : Colors.black)),
-                    ));
-              }
-            : null,
+        edgeLabelMaxWidth: document?.type == DiagramType.er ? 320 : null,
+        compactEdgeLabels: document?.type == DiagramType.er,
         nodeBuilder: (context, node, selected) {
           final data = node.data;
           final label = data is String
@@ -311,23 +275,8 @@ void runSnapshotWorker(List<String> args) {
                       ? Colors.black
                       : const Color(0xff172b40));
           if (node.type == 'erSchema') {
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border.all(color: border),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: Text(label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: foreground, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            );
+            return ErSchemaWidget(
+                label: label, foreground: foreground, border: border);
           }
           if (node.type == 'erTable' &&
               rawDiagram is Map &&

@@ -1,5 +1,8 @@
 # Experimental isolated desktop snapshot renderer
 
+For public entry points, API inventory and examples, see
+[`desktop-rendering-api.md`](desktop-rendering-api.md).
+
 ![Approval flow rendered with the Windows worker](images/hidden-rendering-approval.png)
 
 `package:fflow/fflow_desktop.dart` provides `FlowIsolatedRenderService` for a
@@ -60,9 +63,11 @@ Diagnostics report routing time.
 
 For default edge labels on graphs of at most 1,000 nodes and 2,000 edges,
 export also tries nearby positions when a label overlaps a node or a previous
-label, and expands the capture bounds accordingly. This bounded heuristic can
-leave collisions when no candidate is clear. Custom edge-label widgets,
-including the ER label renderer, are not repositioned by this heuristic.
+label, and expands the capture bounds accordingly. ER relationship labels wrap
+within 320 logical pixels without a line limit and use the same placement
+heuristic. This bounded search can still leave collisions or place labels away
+from their edges in dense diagrams; it does not guarantee crossing-free routes.
+Custom edge-label widgets are not repositioned by this heuristic.
 
 Input reads are bounded and parsing runs in a background isolate. JSON is
 checked for nesting before decoding; process requests also reject cycles,
