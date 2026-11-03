@@ -18,7 +18,7 @@ class ErName {
   final String name;
   String get id => 'table:${jsonEncode([schema, name])}';
   @override
-  String toString() => '$schema.$name';
+  String toString() => schema.isEmpty ? name : '$schema.$name';
 }
 
 class ErColumn {
@@ -31,7 +31,8 @@ class ErColumn {
       required this.foreignKey,
       this.defaultExpression,
       this.nullabilityConstraintName,
-      this.defaultConstraintName});
+      this.defaultConstraintName,
+      this.mysql = const {}});
   final String name;
   final String sqlType;
   final bool nullable;
@@ -42,6 +43,7 @@ class ErColumn {
   final bool foreignKey;
   final String? defaultExpression;
   final String? nullabilityConstraintName, defaultConstraintName;
+  final Map<String, Object?> mysql;
 
   Map<String, Object?> toJson() => {
         'name': name,
@@ -55,6 +57,7 @@ class ErColumn {
           'nullabilityConstraintName': nullabilityConstraintName,
         if (defaultConstraintName != null)
           'defaultConstraintName': defaultConstraintName,
+        if (mysql.isNotEmpty) 'mysql': mysql,
       };
 }
 
@@ -108,7 +111,8 @@ class ErTable {
       required Iterable<String> primaryKey,
       this.primaryKeyName,
       required Iterable<ErUniqueConstraint> uniqueConstraints,
-      required Iterable<ErForeignKey> foreignKeys})
+      required Iterable<ErForeignKey> foreignKeys,
+      this.mysql = const {}})
       : columns = List.unmodifiable(columns),
         primaryKey = List.unmodifiable(primaryKey),
         uniqueConstraints = List.unmodifiable(uniqueConstraints),
@@ -119,11 +123,14 @@ class ErTable {
   final List<String> primaryKey;
   final List<ErUniqueConstraint> uniqueConstraints;
   final List<ErForeignKey> foreignKeys;
+  final Map<String, Object?> mysql;
 }
 
 class ErSchema {
-  ErSchema(Iterable<ErTable> tables) : tables = List.unmodifiable(tables);
+  ErSchema(Iterable<ErTable> tables, {this.sourceFormat = 'postgresql'})
+      : tables = List.unmodifiable(tables);
   final List<ErTable> tables;
+  final String sourceFormat;
 
   /// Converts semantic tables and foreign keys to the common document format.
   DiagramDocument toDiagram({String? title, bool groupBySchema = false}) {
@@ -139,14 +146,14 @@ class ErSchema {
         'layerSpacing': 180,
         if (groupBySchema) 'groupPadding': 112
       },
-      'metadata': {'sourceFormat': 'postgresql'},
+      'metadata': {'sourceFormat': sourceFormat},
       'nodes': [
         if (groupBySchema)
           for (final schema in {for (final table in tables) table.name.schema})
             {
               'id': 'schema:${jsonEncode(schema)}',
               'type': 'erSchema',
-              'label': schema,
+              'label': schema.isEmpty ? '(default)' : schema,
               'data': {'schema': schema},
             },
         for (final table in tables)
@@ -166,7 +173,8 @@ class ErSchema {
                 'primaryKeyName': table.primaryKeyName,
               'uniqueConstraints': [
                 for (final unique in table.uniqueConstraints) unique.toJson()
-              ]
+              ],
+              if (table.mysql.isNotEmpty) 'mysql': table.mysql,
             },
           }
       ],

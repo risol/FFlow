@@ -7,7 +7,7 @@ every possible graph or desktop environment has been validated.
 | Plan item | Current evidence and limits |
 | --- | --- |
 | Hidden window and focus | The native runner does not show or focus its window. A Windows 10 22H2 sampling run observed no visible or foreground window; sampling cannot exclude every transient state. See [the rendering experiment](hidden-rendering-poc.md). |
-| Desktop API and four input formats | Isolated Dart service and root-confined file service exercised against a real Windows worker; parser subsets are documented in [Graph JSON](graph-json.md), [Mermaid](mermaid-flowchart.md), and [PostgreSQL](postgresql-ddl.md). |
+| Desktop API and five input formats | Isolated Dart service and root-confined file service exercised against a real Windows worker; parser subsets are documented in [Graph JSON](graph-json.md), [Mermaid](mermaid-flowchart.md), [PostgreSQL](postgresql-ddl.md), and [MySQL](mysql-ddl.md). |
 | Automatic layout and visual quality | FFlow layered layout supports four directions, configurable node ordering, nested schema groups, separate lanes for simple reciprocal flows and clear-corridor routing for some longer cycles. An optional bounded orthogonal router avoids nearby node obstacles, and default labels use bounded collision avoidance. More complex cycles, relationship crossings and custom-label collisions can still need improvement. |
 | Complete PNG and scaling | Tests cover negative coordinates, distant edge routes and labels, 1×, 2×, 3×, limits and transparent pixels. Static export requires node builders to remain within declared dimensions. |
 | Chinese | The worker bundles Noto Sans SC and loads it before measuring text. A Windows golden covers Chinese title, nodes and edge label. |

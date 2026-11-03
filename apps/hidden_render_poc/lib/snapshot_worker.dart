@@ -44,7 +44,8 @@ void runSnapshotWorker(List<String> args) {
       var layoutTime = Duration.zero;
       if (request['diagram'] != null ||
           request['mermaid'] != null ||
-          request['postgresDdl'] != null) {
+          request['postgresDdl'] != null ||
+          request['mysqlDdl'] != null) {
         final DiagramDocument parsedDocument;
         if (request['mermaid'] != null) {
           phase = 'PARSE_ERROR';
@@ -59,6 +60,16 @@ void runSnapshotWorker(List<String> args) {
             throw StateError('INPUT_TOO_LARGE: SQL exceeds 2 MB');
           }
           parsedDocument = parsePostgresDdl(request['postgresDdl'] as String)
+              .toDiagram(
+                  title: request['title'] as String?,
+                  groupBySchema: request['groupBySchema'] as bool? ?? false);
+        } else if (request['mysqlDdl'] != null) {
+          phase = 'PARSE_ERROR';
+          if (exceedsUtf8Limit(request['mysqlDdl'] as String, 2000000)) {
+            throw StateError('INPUT_TOO_LARGE: SQL exceeds 2 MB');
+          }
+          parsedDocument = parseMysqlDdl(request['mysqlDdl'] as String,
+                  defaultSchema: request['defaultSchema'] as String?)
               .toDiagram(
                   title: request['title'] as String?,
                   groupBySchema: request['groupBySchema'] as bool? ?? false);
@@ -413,8 +424,13 @@ void runSnapshotWorker(List<String> args) {
             'height': expectedHeight,
             'diagnostics': {
               'inputFormat': declaredFormat is String &&
-                      const {'fflowJson', 'graphJson', 'mermaid', 'postgresDdl'}
-                          .contains(declaredFormat)
+                      const {
+                        'fflowJson',
+                        'graphJson',
+                        'mermaid',
+                        'postgresDdl',
+                        'mysqlDdl'
+                      }.contains(declaredFormat)
                   ? declaredFormat
                   : 'unknown',
               'diagramType': document?.type.name ?? 'fflow',

@@ -11,7 +11,7 @@ This repository contains the SDK package at its root and a runnable workflow edi
 *The example editor shows a trigger, AI step, human review, and output connected on a navigable canvas.*
 
 For experimental hidden Windows rendering and PNG export from snapshots,
-Graph JSON, Mermaid flowcharts, or PostgreSQL DDL, see
+Graph JSON, Mermaid flowcharts, PostgreSQL DDL, or MySQL DDL, see
 [desktop rendering and integration](doc/isolated-desktop-rendering.md).
 The [acceptance record](doc/desktop-rendering-acceptance.md) describes tested
 configurations and remaining limitations.

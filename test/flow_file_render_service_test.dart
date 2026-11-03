@@ -76,7 +76,7 @@ void main() {
     await fixture.delete(recursive: true);
   });
 
-  test('reads all four formats and replaces output in the chosen directory',
+  test('reads all five formats and replaces output in the chosen directory',
       () async {
     await File(p.join(input.path, 'snapshot.json'))
         .writeAsString('{"nodes":[],"edges":[]}');
@@ -121,6 +121,17 @@ void main() {
     expect(
         renderer.documents.last.nodes.where((node) => node.type == 'erSchema'),
         hasLength(1));
+    await File(p.join(input.path, 'mysql.sql')).writeAsString(
+        'CREATE TABLE `parent` (`id` int PRIMARY KEY); '
+        'CREATE TABLE child (pid int, FOREIGN KEY (pid) REFERENCES parent(id));');
+    final mysql = await service.render(
+        inputPath: 'mysql.sql',
+        format: FlowFileFormat.mysqlDdl,
+        defaultSchema: 'shop',
+        groupBySchema: true);
+    expect(mysql.diagnostics['inputFormat'], 'mysqlDdl');
+    expect(renderer.documents.last.nodes.first.label, 'shop');
+    expect(renderer.documents.last.edges, hasLength(1));
     expect(await output.list().length, 1,
         reason: 'Temporary output files must be removed');
   });

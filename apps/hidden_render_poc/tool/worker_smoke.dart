@@ -180,7 +180,8 @@ retry --> decision
   await File('${args[1]}.labels.png').writeAsBytes(crowdedImage.pngBytes);
   for (final badInput in <Future<FlowWorkerResult> Function()>[
     () => service.renderMermaid('not a flowchart'),
-    () => service.renderPostgresDdl('CREATE TABLE broken (')
+    () => service.renderPostgresDdl('CREATE TABLE broken ('),
+    () => service.renderMysqlDdl('CREATE TABLE broken (')
   ]) {
     try {
       await badInput();
@@ -306,6 +307,21 @@ CREATE TABLE accounting.invoice (id bigint PRIMARY KEY, customer_id bigint REFER
       grouped.diagnostics['edgeCount'] != 1) {
     throw StateError('Schema grouping failed');
   }
+  const mysqlDdl = '''
+CREATE TABLE `customers` (`id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE `orders` (`id` BIGINT PRIMARY KEY, `customer_id` BIGINT NOT NULL,
+  KEY `ix_customer` (`customer_id`),
+  CONSTRAINT `fk_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`)
+  ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+''';
+  final mysql = await service.renderMysqlDdl(mysqlDdl,
+      defaultSchema: 'shop', groupBySchema: true, pixelRatio: 1);
+  if (mysql.diagnostics['inputFormat'] != 'mysqlDdl' ||
+      mysql.diagnostics['nodeCount'] != 3 ||
+      mysql.diagnostics['edgeCount'] != 1) {
+    throw StateError('MySQL rendering failed: ${mysql.diagnostics}');
+  }
+  await File('${args[1]}.mysql.png').writeAsBytes(mysql.pngBytes);
   await File('${args[1]}.grouped.png')
       .writeAsBytes(grouped.pngBytes, flush: true);
   final inputDirectory =
@@ -321,6 +337,7 @@ CREATE TABLE accounting.invoice (id bigint PRIMARY KEY, customer_id bigint REFER
     ('graph.json', FlowFileFormat.graphJson, jsonEncode(diagram.toJson())),
     ('graph.mmd', FlowFileFormat.mermaid, mermaid),
     ('schema.sql', FlowFileFormat.postgresDdl, ddl),
+    ('mysql.sql', FlowFileFormat.mysqlDdl, mysqlDdl),
   ];
   for (final entry in cases) {
     final inputFile =

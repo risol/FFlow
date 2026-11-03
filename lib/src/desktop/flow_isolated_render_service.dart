@@ -158,6 +158,25 @@ class FlowIsolatedRenderService {
           options ??
               FlowRenderOptions(pixelRatio: pixelRatio, padding: padding));
 
+  /// Parses the supported MySQL DDL subset and renders its ER diagram.
+  Future<FlowWorkerResult> renderMysqlDdl(String source,
+          {String? title,
+          String? defaultSchema,
+          bool groupBySchema = false,
+          double pixelRatio = 2,
+          double padding = 32,
+          FlowRenderOptions? options}) =>
+      _enqueue(
+          {
+            'mysqlDdl': source,
+            'title': title,
+            'defaultSchema': defaultSchema,
+            'groupBySchema': groupBySchema,
+            'inputFormat': 'mysqlDdl'
+          },
+          options ??
+              FlowRenderOptions(pixelRatio: pixelRatio, padding: padding));
+
   Future<FlowWorkerResult> _enqueue(
       Map<String, Object?> input, FlowRenderOptions options) {
     options.validate();

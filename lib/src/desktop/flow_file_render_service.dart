@@ -8,13 +8,14 @@ import 'package:path/path.dart' as p;
 
 import '../diagram/diagram_document.dart';
 import '../diagram/mermaid_flowchart_parser.dart';
+import '../diagram/mysql_ddl_parser.dart';
 import '../diagram/postgres_ddl_parser.dart';
 import 'atomic_file.dart';
 import 'flow_errors.dart';
 import 'flow_isolated_render_service.dart';
 import 'json_limits.dart';
 
-enum FlowFileFormat { fflowJson, graphJson, mermaid, postgresDdl }
+enum FlowFileFormat { fflowJson, graphJson, mermaid, postgresDdl, mysqlDdl }
 
 class FlowFileRenderResult {
   const FlowFileRenderResult(
@@ -71,6 +72,7 @@ class FlowFileRenderService {
       required FlowFileFormat format,
       String? outputPath,
       String? title,
+      String? defaultSchema,
       bool groupBySchema = false,
       double pixelRatio = 2,
       double padding = 32,
@@ -82,8 +84,13 @@ class FlowFileRenderService {
         resolvedOptions.direction != null) {
       throw ArgumentError('Layout direction is not supported for snapshots');
     }
-    if (groupBySchema && format != FlowFileFormat.postgresDdl) {
-      throw ArgumentError('Schema grouping applies only to PostgreSQL DDL');
+    if (groupBySchema &&
+        format != FlowFileFormat.postgresDdl &&
+        format != FlowFileFormat.mysqlDdl) {
+      throw ArgumentError('Schema grouping applies only to SQL DDL');
+    }
+    if (defaultSchema != null && format != FlowFileFormat.mysqlDdl) {
+      throw ArgumentError('defaultSchema applies only to MySQL DDL');
     }
     if (_pending >= maxPendingTasks) {
       throw const FlowWorkerException(
@@ -117,7 +124,8 @@ class FlowFileRenderService {
       }
       final bytes = await _readBounded(input, inputPath);
       if ((format == FlowFileFormat.mermaid ||
-              format == FlowFileFormat.postgresDdl) &&
+              format == FlowFileFormat.postgresDdl ||
+              format == FlowFileFormat.mysqlDdl) &&
           bytes.length > 2000000) {
         throw FlowWorkerException(
             'INPUT_TOO_LARGE', '$inputPath exceeds the 2 MB parser limit');
@@ -126,7 +134,7 @@ class FlowFileRenderService {
       final _ParsedInput parsed;
       try {
         parsed = await Isolate.run(
-            () => _parse(bytes, format, title, groupBySchema));
+            () => _parse(bytes, format, title, groupBySchema, defaultSchema));
       } on DiagramReferenceException catch (error) {
         throw FlowWorkerException(
             'GRAPH_REFERENCE_ERROR', '$inputPath: ${error.message}');
@@ -308,8 +316,8 @@ class _InputException implements Exception {
   final String code, message;
 }
 
-_ParsedInput _parse(
-    Uint8List bytes, FlowFileFormat format, String? title, bool groupBySchema) {
+_ParsedInput _parse(Uint8List bytes, FlowFileFormat format, String? title,
+    bool groupBySchema, String? defaultSchema) {
   var text = utf8.decode(bytes);
   if (text.startsWith('\ufeff')) text = text.substring(1);
   if (format == FlowFileFormat.mermaid) {
@@ -318,6 +326,11 @@ _ParsedInput _parse(
   if (format == FlowFileFormat.postgresDdl) {
     return _ParsedInput(
         document: parsePostgresDdl(text)
+            .toDiagram(title: title, groupBySchema: groupBySchema));
+  }
+  if (format == FlowFileFormat.mysqlDdl) {
+    return _ParsedInput(
+        document: parseMysqlDdl(text, defaultSchema: defaultSchema)
             .toDiagram(title: title, groupBySchema: groupBySchema));
   }
   final Object? json;

@@ -25,7 +25,7 @@ final image = await renderer.renderSnapshot(snapshotJson, pixelRatio: 2);
 
 For files, create `FlowFileRenderService` with existing, application-controlled
 input and output root directories. Supply a root-relative path and an explicit
-`FlowFileFormat` (`fflowJson`, `graphJson`, `mermaid`, or `postgresDdl`):
+`FlowFileFormat` (`fflowJson`, `graphJson`, `mermaid`, `postgresDdl`, or `mysqlDdl`):
 
 ```dart
 final files = FlowFileRenderService(
@@ -95,9 +95,10 @@ also accepts a `DiagramDocument` through `renderDiagram`; see
 [`graph-json.md`](graph-json.md) for supported layout, themes and styling.
 The supported Mermaid flowchart subset is described in
 [`mermaid-flowchart.md`](mermaid-flowchart.md). The PostgreSQL DDL subset is
-documented in [`postgresql-ddl.md`](postgresql-ddl.md). Legends and more
+documented in [`postgresql-ddl.md`](postgresql-ddl.md), and the MySQL subset in
+[`mysql-ddl.md`](mysql-ddl.md). Legends and more
 advanced ER rendering remain future work.
-For direct `renderMermaid` and `renderPostgresDdl` calls, source parsing and
+For direct `renderMermaid`, `renderPostgresDdl`, and `renderMysqlDdl` calls, source parsing and
 layout execute in the isolated worker; parsing failures are returned as
 `FlowWorkerException` with a `PARSE_ERROR` code. File parsing instead runs in
 a background Dart isolate before its document is sent to the worker.
