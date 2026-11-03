@@ -4,7 +4,7 @@ import 'flow_handle.dart';
 
 enum FlowEdgeType { bezier, straight, step, smoothStep, simpleBezier }
 
-enum FlowEdgeMarker { arrow, arrowClosed }
+enum FlowEdgeMarker { arrow, arrowClosed, crowFootZeroMany, one, zeroOrOne }
 
 /// Which side of an edge may be moved during reconnection.
 enum FlowReconnectable { none, source, target, both }

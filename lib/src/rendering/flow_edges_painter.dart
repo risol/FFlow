@@ -87,8 +87,9 @@ class FlowEdgesPainter<T> extends CustomPainter {
   }) {
     final metrics = resolvedMetrics;
     if (metrics.isEmpty) return;
+    final strokePath = _withMarkerGaps(path, metrics, edge);
     canvas.drawPath(
-      path,
+      strokePath,
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
@@ -101,14 +102,46 @@ class FlowEdgesPainter<T> extends CustomPainter {
     }
     if (edge?.markerStart != null) {
       _drawMarker(canvas, metrics, edge?.markerColor ?? color,
-          atStart: true,
-          closed: edge!.markerStart == FlowEdgeMarker.arrowClosed);
+          atStart: true, markerType: edge!.markerStart!);
     }
     if (edge?.markerEnd != null) {
       _drawMarker(canvas, metrics, edge?.markerColor ?? color,
-          atStart: false,
-          closed: edge!.markerEnd == FlowEdgeMarker.arrowClosed);
+          atStart: false, markerType: edge!.markerEnd!);
     }
+  }
+
+  Path _withMarkerGaps(
+      Path original, List<PathMetric> metrics, FlowEdge? edge) {
+    double? gapCenter(FlowEdgeMarker? marker) => switch (marker) {
+          FlowEdgeMarker.crowFootZeroMany => 18,
+          FlowEdgeMarker.zeroOrOne => 13,
+          _ => null,
+        };
+    final start = gapCenter(edge?.markerStart);
+    final end = gapCenter(edge?.markerEnd);
+    if (start == null && end == null) return original;
+    final result = Path();
+    for (var i = 0; i < metrics.length; i++) {
+      final metric = metrics[i];
+      final gaps = <(double, double)>[
+        if (i == 0 && start != null) (start - 4, start + 4),
+        if (i == metrics.length - 1 && end != null)
+          (metric.length - end - 4, metric.length - end + 4),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      var cursor = 0.0;
+      for (final gap in gaps) {
+        final from = gap.$1.clamp(0.0, metric.length).toDouble();
+        final to = gap.$2.clamp(0.0, metric.length).toDouble();
+        if (from > cursor) {
+          result.addPath(metric.extractPath(cursor, from), Offset.zero);
+        }
+        cursor = math.max(cursor, to);
+      }
+      if (cursor < metric.length) {
+        result.addPath(metric.extractPath(cursor, metric.length), Offset.zero);
+      }
+    }
+    return result;
   }
 
   void _drawAnimatedDashes(
@@ -147,7 +180,7 @@ class FlowEdgesPainter<T> extends CustomPainter {
     List<PathMetric> metrics,
     Color color, {
     required bool atStart,
-    required bool closed,
+    required FlowEdgeMarker markerType,
   }) {
     if (metrics.first.length == 0) return;
     final metric = metrics.first;
@@ -156,13 +189,42 @@ class FlowEdgesPainter<T> extends CustomPainter {
     final direction = tangent.vector;
     final tip = tangent.position;
     final sign = atStart ? -1.0 : 1.0;
+    final normalUnit = Offset(-direction.dy, direction.dx);
+    final inward = direction * -sign;
+    if (markerType == FlowEdgeMarker.crowFootZeroMany ||
+        markerType == FlowEdgeMarker.one ||
+        markerType == FlowEdgeMarker.zeroOrOne) {
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      void line(Offset a, Offset b) => canvas.drawLine(a, b, paint);
+      if (markerType == FlowEdgeMarker.crowFootZeroMany) {
+        final junction = tip + inward * 12;
+        line(junction, tip + normalUnit * 5);
+        line(junction, tip - normalUnit * 5);
+        line(junction, tip);
+        canvas.drawCircle(tip + inward * 18, 3, paint);
+      } else {
+        final bar = tip + inward * 5;
+        line(bar + normalUnit * 5, bar - normalUnit * 5);
+        if (markerType == FlowEdgeMarker.zeroOrOne) {
+          canvas.drawCircle(tip + inward * 13, 3, paint);
+        } else {
+          final second = tip + inward * 10;
+          line(second + normalUnit * 5, second - normalUnit * 5);
+        }
+      }
+      return;
+    }
     final base = tip - direction * (9 * sign);
     final normal = Offset(-direction.dy, direction.dx) * 4;
     final marker = Path()
       ..moveTo(tip.dx, tip.dy)
       ..lineTo(base.dx + normal.dx, base.dy + normal.dy)
       ..lineTo(base.dx - normal.dx, base.dy - normal.dy);
-    if (closed) {
+    if (markerType == FlowEdgeMarker.arrowClosed) {
       marker.close();
       canvas.drawPath(marker, Paint()..color = color);
     } else {

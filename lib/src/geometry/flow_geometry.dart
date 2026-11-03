@@ -359,12 +359,11 @@ abstract final class FlowGeometry {
             sourcePosition: sourceSide,
             targetPosition: targetSide,
           )
-        : Path()
-      ..moveTo(start.dx, start.dy)
-      ..addPolygon(
-        [for (final point in edge.controlPoints) point, end],
-        false,
-      );
+        : (Path()
+          ..addPolygon(
+            [start, for (final point in edge.controlPoints) point, end],
+            false,
+          ));
     final metrics = path.computeMetrics().toList(growable: false);
     final labelPosition = metrics.isEmpty || metrics.first.length == 0
         ? start

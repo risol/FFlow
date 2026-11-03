@@ -323,6 +323,7 @@ class FFlowCanvas<T> extends StatefulWidget {
     this.elevateNodesOnSelect = true,
     this.elevateEdgesOnSelect = true,
     this.connectOnClick = true,
+    this.showHandles = true,
     this.onlyRenderVisibleElements = false,
     this.autoPan = true,
     this.autoPanOnNodeDrag = true,
@@ -486,6 +487,10 @@ class FFlowCanvas<T> extends StatefulWidget {
 
   /// Allow clicking a source handle and then a target handle to connect.
   final bool connectOnClick;
+
+  /// Whether node connection handles are painted. Edge anchor geometry is
+  /// unchanged; this is useful for read-only export views.
+  final bool showHandles;
 
   /// Skip off-screen nodes and edges when true. Leave false for the default
   /// behavior; viewport culling is useful for large graphs.

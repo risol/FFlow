@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fflow.local/schema/diagram-document-v1.json",
+  "title": "FFlow DiagramDocument v1",
+  "type": "object",
+  "required": ["schemaVersion", "diagramType", "nodes", "edges"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "diagramType": {"enum": ["flowchart", "er"]},
+    "title": {"type": ["string", "null"]},
+    "nodes": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/edge"}},
+    "layout": {"anyOf": [{"$ref": "#/$defs/layout"}, {"type": "null"}]},
+    "theme": {"enum": ["light", "dark", "print", null]},
+    "metadata": {"type": ["object", "null"]}
+  },
+  "allOf": [{
+    "if": {"properties": {"layout": {"type": "object", "properties": {"mode": {"const": "preserve"}}, "required": ["mode"]}}, "required": ["layout"]},
+    "then": {"properties": {"nodes": {"items": {"required": ["position"], "properties": {"position": {"$ref": "#/$defs/position"}}}}}}
+  }],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "position": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+    "size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0, "maximum": 10000}, "height": {"type": "number", "exclusiveMinimum": 0, "maximum": 10000}}},
+    "style": {"type": "object", "properties": {
+      "background": {"$ref": "#/$defs/color"}, "foreground": {"$ref": "#/$defs/color"},
+      "border": {"$ref": "#/$defs/color"}, "color": {"$ref": "#/$defs/color"},
+      "strokeWidth": {"type": "number", "exclusiveMinimum": 0, "maximum": 64},
+      "shape": {"type": ["string", "null"]}
+    }},
+    "color": {"type": ["string", "null"], "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"},
+    "port": {"type": "object", "required": ["id", "kind", "side"], "properties": {
+      "id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["source", "target"]},
+      "side": {"enum": ["left", "right", "top", "bottom"]}, "offset": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+    }},
+    "node": {"type": "object", "required": ["id", "label"], "properties": {
+      "id": {"$ref": "#/$defs/id"}, "type": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]}, "label": {"type": "string"},
+      "data": {"type": ["object", "null"]}, "position": {"anyOf": [{"$ref": "#/$defs/position"}, {"type": "null"}]},
+      "size": {"anyOf": [{"$ref": "#/$defs/size"}, {"type": "null"}]}, "parentId": {"type": ["string", "null"]},
+      "ports": {"type": ["array", "null"], "items": {"$ref": "#/$defs/port"}},
+      "style": {"anyOf": [{"$ref": "#/$defs/style"}, {"type": "null"}]}
+    }},
+    "edge": {"type": "object", "required": ["id", "source", "target"], "properties": {
+      "id": {"$ref": "#/$defs/id"}, "source": {"$ref": "#/$defs/id"}, "target": {"$ref": "#/$defs/id"},
+      "sourcePort": {"type": ["string", "null"]}, "targetPort": {"type": ["string", "null"]},
+      "label": {"type": ["string", "null"]}, "type": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+      "data": {"type": ["object", "null"]}, "style": {"anyOf": [{"$ref": "#/$defs/style"}, {"type": "null"}]}
+    }},
+    "layout": {"type": "object", "properties": {
+      "mode": {"enum": ["auto", "preserve", null]}, "direction": {"enum": ["LR", "RL", "TB", "BT", null]},
+      "nodeOrder": {"enum": ["input", "id", "label", null]},
+      "nodeSpacing": {"type": ["number", "null"], "minimum": 0, "maximum": 10000},
+      "layerSpacing": {"type": ["number", "null"], "minimum": 0, "maximum": 10000},
+      "groupPadding": {"type": ["number", "null"], "minimum": 0, "maximum": 10000}
+    }}
+  }
+}

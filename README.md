@@ -2,13 +2,19 @@
 
 FFlow is a Flutter SDK for building interactive, node-based editors. Use it to create workflow builders, visual automation tools, data pipelines, state machines, and other graph interfaces that fit the rest of your Flutter app.
 
-The SDK provides the graph canvas, node and edge models, editing interactions, viewport navigation, and reusable controls. Your app defines the node data and UI, applies domain-specific validation, and decides what running a workflow means. Keep graph state in your own widgets with change callbacks, or use `FlowGraphController` when you want observable graph state and indexed queries. FFlow is Flutter-native and has no third-party runtime dependencies.
+The SDK provides the graph canvas, node and edge models, editing interactions, viewport navigation, and reusable controls. Your app defines the node data and UI, applies domain-specific validation, and decides what running a workflow means. Keep graph state in your own widgets with change callbacks, or use `FlowGraphController` when you want observable graph state and indexed queries. FFlow is Flutter-native and uses the Dart `path` package for desktop file integration.
 
 This repository contains the SDK package at its root and a runnable workflow editor in [`example/`](example/). The example demonstrates a four-step research workflow, with a node library, draggable canvas, connectable handles, overview minimap, and editor actions.
 
 ![FFlow workflow editor example](doc/images/fflow-workflow-editor.png)
 
 *The example editor shows a trigger, AI step, human review, and output connected on a navigable canvas.*
+
+For experimental hidden Windows rendering and PNG export from snapshots,
+Graph JSON, Mermaid flowcharts, or PostgreSQL DDL, see
+[desktop rendering and integration](doc/isolated-desktop-rendering.md).
+The [acceptance record](doc/desktop-rendering-acceptance.md) describes tested
+configurations and remaining limitations.
 
 ## How FFlow fits into an app
 

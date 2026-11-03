@@ -4,6 +4,16 @@ Notable changes to FFlow are recorded here. Entries stay under `Unreleased` unti
 
 ## Unreleased
 
+### Added
+
+- Experimental Windows hidden rendering worker and Dart APIs for complete-graph PNG export, bounded file input/output, task limits, diagnostics, themes and optional orthogonal routing.
+- Versioned Graph JSON, Mermaid flowchart and PostgreSQL DDL adapters, ER table and relationship rendering, optional schema grouping, and cycle-routing improvements.
+- Bundled Noto Sans SC font, Windows export goldens, integration and stress tools, and desktop rendering documentation.
+
+### Changed
+
+- Add the `path` package for desktop file integration and extend FFlow edge geometry with ER markers and explicit routed points.
+
 ## 0.1.5
 
 ### Added

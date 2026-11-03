@@ -150,9 +150,10 @@ extension _FlowCanvasNodes<T> on _FFlowCanvasState<T> {
             height: node.height,
             child: content,
           ),
-        for (final handle in node.resolvedHandles)
-          _buildHandle(node, handle, nodesById, position,
-              padding: _nodeInteractivePadding),
+        if (widget.showHandles)
+          for (final handle in node.resolvedHandles)
+            _buildHandle(node, handle, nodesById, position,
+                padding: _nodeInteractivePadding),
         if (selected && node.resizable)
           for (final direction in _FlowResizeDirection.values)
             _buildNodeResizeHandle(node, direction,
